@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Projections of molecules in Blender · Julius Oppenheim</title>
+  <meta name="description" content="Using Geometry Nodes to project the atoms of a framework onto a plane as it sinks through it, and animating the result.">
+  <link rel="stylesheet" href="../assets/style.css">
+  <link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+  <script src="../assets/theme.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap">
+    <a class="site-name" href="../index.html">Julius Oppenheim</a>
+    <nav class="site-nav" aria-label="Main">
+      <a href="../index.html">Home</a>
+      <a href="../publications.html">Publications</a>
+      <a href="../software.html">Software</a>
+      <a href="../water-database.html">Water Database</a>
+      <a href="../blog/index.html" aria-current="page">Blog</a>
+      <a href="../cv.html">CV</a>
+      <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light and dark mode" hidden><svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v2.5M12 20v2.5M1.5 12H4M20 12h2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8"/></svg><svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"/></svg></button>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+    <article class="prose">
+    <h1>Projections of molecules in Blender</h1>
+    <p class="date"><time datetime="2022-11-28">November 28, 2022</time></p>
+<p>Here, I will walk through the process of making an animation similar to the one found at <a href="https://twitter.com/Jules_Oppenheim/status/1597229519332864001">https://twitter.com/Jules_Oppenheim/status/1597229519332864001</a></p>
+
+<p>1) Download the latest version of Blender from <a href="https://www.blender.org/download/">https://www.blender.org/download/</a></p>
+
+<p>For this particular animation, we will need to install the experimental Blender version 3.4.0 or newer. This is because we will be using a new type of geometry node called &#8220;Self Object&#8221; that has been introduced in version 3.4.0.</p>
+
+<p>When working with Blender experimental versions, remember to save often as it may crash.</p>
+
+<p>2) Go to Edit-&gt;Preferences and add the &#8220;Import-Export: Atomic Blender PDB/XYZ&#8221; add-on.</p>
+
+<figure><img src="../assets/blog/projections/Screen-Shot-2022-08-28-at-7.54.52-PM.png" alt="Screenshot for this step" loading="lazy"></figure>
+
+<p>3) Go to File -&gt; Import -&gt; .xyz.</p>
+
+<p>For generating a .xyz file for a periodic structure, I typically open a .cif file in VESTA and go to File -&gt; Export Data and save as a .xyz. In VESTA, you can press &#8220;Boundary&#8221; to change the number of unit cells that you would like to include.</p>
+
+<p>4) Select &#8220;Mesh&#8221; for the atom type and then Import the .xyz file</p>
+
+<p>You should now be able to see the .xyz file in the viewport</p>
+
+<p>In this example, I am using 1 unit cell of MIL-88b</p>
+
+<figure><img src="../assets/blog/projections/Screen-Shot-2022-11-28-at-10.00.42-PM.png" alt="Screenshot for this step" loading="lazy"></figure>
+
+<p>5) It is now important to understand how the molecule is interpreted by Blender when we tell it that the atoms should be a mesh.</p>
+
+<figure><img src="../assets/blog/projections/Screen-Shot-2022-11-28-at-10.03.05-PM.png" alt="Screenshot for this step" loading="lazy"></figure>
+
+<p>In the scene collection tab on the right side of the screen, we can see that there is a collection for the molecule. This heirarchy contains one subcollection for each atom type, in this case there is a collection for chromium, oxygen, carbon, and hydrogen. For each of these atom types, there is a parent mesh, such as Chromium_mesh, which contains another geometry, such as Chromium_ball. Press the closed eye on the right side of the tab for Chromium_ball in order to be able to see and select to object in the view port.</p>
+
+<p>The Chromium_mesh is a series of vertices, each at the location of a chromium atom. The Chromium_ball is the geometry of the object that is placed at each of the vertices of the Chromium_mesh. So if we make the Chromium_ball any arbitrary shape, then each of the chromium atoms in the scene will look like and adopt the material type of that object</p>
+
+<p>For example, I have changed the geometry of Chromium_ball to a monkey&#8217;s head, and each of the chromium atoms in the scene have changed to a monkey.</p>
+
+<figure><img src="../assets/blog/projections/Screen-Shot-2022-11-28-at-10.09.56-PM.png" alt="Screenshot for this step" loading="lazy"></figure>
+
+<p>6) What we want to do is to change the geometry of the Chromium ball such that when the atom is above the xy plane (z coordinate &gt; 0) then the atom looks as it should, but when the atom crosses beneath the xy plane, it should be projected up onto the plane. </p>
+
+<p>In order to accomplish this, we will be using Geometry Nodes. This allows us to build up a logic tree that accomplishes the plan.</p>
+
+<p>7) Before that, we need to add two objects to the scene.</p>
+
+<p>First, we will add a bounding box for the atoms. If the atoms cross out of this box, then they will disappear. Press &#8220;Shift-A&#8221; and add a cube to the scene. With the cube selected, press &#8220;s 100&#8221; to scale the cube 100 times. Then press &#8220;g z 100&#8221; to translate the cube in the Z-direction by 100 units. In the right tab, press the eye and the camera to hide this cube in the viewport and in renders.</p>
+
+<p>Second, we will add a short cylinder which will be the projected sphere. Press &#8220;Shift-A&#8221; and add a cylinder to the scene. Press &#8220;s z 0.1&#8221; to scale the height down by a factor of 10. In the right tab, press the eye and the camera to hide this cube in the viewport and in renders.</p>
+
+<p>8) Change the bottom panel from &#8220;Timeline&#8221; to the &#8220;Geometry Node Editor&#8221;</p>
+
+<figure><img src="../assets/blog/projections/Screen-Shot-2022-11-28-at-10.13.46-PM.png" alt="Screenshot for this step" loading="lazy"></figure>
+
+<p>9) Select the Chromium_ball and then press &#8220;New&#8221; in the &#8220;Geometry Node Editor&#8221;</p>
+
+<p>10) We will now build the logic tree. Press &#8220;shift-A&#8221; to bring up a window that allows us to add nodes</p>
+
+<figure><img src="../assets/blog/projections/Screen-Shot-2022-11-28-at-10.18.43-PM.png" alt="Screenshot for this step" loading="lazy"></figure>
+
+<p>11) Build the following logic tree</p>
+
+<figure><img src="../assets/blog/projections/Screen-Shot-2022-11-28-at-10.28.50-PM.png" alt="Screenshot for this step" loading="lazy"></figure>
+
+<p>To briefly explain the logic. We are combining geometries in different ways and feeding them into the &#8220;Group Output&#8221;, which is what you will see in the viewport. The core of the logic is at the very top in the green colored nodes. We take the &#8220;Group Input&#8221;, which is each individual atomic sphere, and combine it with the cube using a &#8220;Mesh Boolean&#8221; set to intersect. This will clip the sphere if it passes outside of the bounding box. The sphere is then combined with the cylinder using a &#8220;Join Geometry&#8221; in such a way that if the sphere is inside the bounding box, then the cylinder will remain inside the sphere and be undetectable and if the sphere exits beneath the bounding box, then the cylinder will sit at the bottom of the box. The rest of the nodes takes care of calculating the location of the cylinder and accounting for the scale of the sphere.</p>
+
+<p>An important note is that the &#8220;Value&#8221; at the very left side will control the height of the molecule. Later on we will animate this value.</p>
+
+<p>12) In the &#8220;Modifier Properties&#8221; tab on the right side of the screen select &#8220;Chromium_ball&#8221; for the object and &#8220;Chromium&#8221; for the material. It is important to do this step before we make instances real later on.</p>
+
+<figure><img src="../assets/blog/projections/Screen-Shot-2022-11-28-at-10.38.09-PM.png" alt="Screenshot for this step" loading="lazy"></figure>
+
+<p>13) Select the &#8220;Chromium_mesh&#8221; and then press &#8220;Object -&gt; Apply -&gt; Make Instances Real&#8221;. This will convert each of the vertices from the &#8220;Chromium_mesh&#8221; into actual instances of the &#8220;Chromium_ball&#8221;.</p>
+
+<p>Now we can hide the original &#8220;Chromium_mesh&#8221; and &#8220;Chromium_ball&#8221; by pressing the eye and the camera in the right collections tab.</p>
+
+<p>Then, select each of the new &#8220;Chromium_ball.#&#8221; instances (in the right tab click the top one, press shift, and click the bottom one), and press &#8220;command-A&#8221;, &#8220;Apply Rotation&#8221;, then in the top bar press &#8220;Object -&gt; Set Origin -&gt; Origin to center of mass (volume)&#8221;. (Note sometimes you have to unclick and reclick the instances for this to work)</p>
+
+<figure><img src="../assets/blog/projections/Screen-Shot-2022-11-28-at-10.39.12-PM.png" alt="Screenshot for this step" loading="lazy"></figure>
+
+<figure><img src="../assets/blog/projections/Screen-Shot-2022-11-28-at-10.44.14-PM.png" alt="Screenshot for this step" loading="lazy"></figure>
+
+<p>14) At this point, we have successfully modified the chromium atoms and it is now time to repeat this process for the other elements.</p>
+
+<p>Follow this procedure for each element</p>
+
+<ul>
+<li>Press the eye to view the atom_ball</li>
+
+<li>In the &#8220;Modifier Properties&#8221; tab on the right side of the screen, add a &#8220;Geometry Nodes&#8221; modifier</li>
+
+<li>Select the Geometry Node from the drop down menu</li>
+
+<li>Select the atom ball type for &#8220;Object&#8221; and the atom material type for &#8220;Material&#8221;</li>
+
+<li>Select the atom_mesh</li>
+
+<li>Make the instances real</li>
+
+<li>Hide the original atom_mesh and atom_ball</li>
+
+<li>Apply rotation transforms to the new instances and set the origin to the center of mass</li>
+
+</ul>
+
+<p>If successful, the molecule should look somewhat like this</p>
+
+<figure><img src="../assets/blog/projections/Screen-Shot-2022-11-28-at-10.52.33-PM-1024x445.png" alt="Screenshot for this step" loading="lazy"></figure>
+
+<p>15) We can now make the animation</p>
+
+<p>Right-click the horizontal divide between the viewport and the &#8220;Geometry Node Editor&#8221; to add another horizontal split and pull up the &#8220;timeline&#8221;</p>
+
+<p>Set the maximum number of frame, the number could be 50 or 100.</p>
+
+<p>Go to frame 1 and change the value of the &#8220;Value&#8221; geometry node until the entire molecule is above the xy plane (in this example, I have set it to 15), then with the cursor hovering above the number press &#8220;i&#8221; to add a key frame. The number should now be highlighted yellow.</p>
+
+<p>Go to the last frame (press &#8220;shift-right arrow&#8221;) and change the value of the node until the entire molecule has been projected down (in this example, I have set it to -15), then with the cursor hovering above the number press &#8220;i&#8221; to add a key frame. The number should change from orange to yellow.</p>
+
+<p>16) We can now setup the camera</p>
+
+<p>Press &#8220;shift-A&#8221; and add a camera. Move the view to somewhere you like and press &#8220;View -&gt; Align View -&gt; Align active camera to view&#8221;</p>
+
+<p>Then &#8220;View -&gt; Navigation -&gt; Walk navigation&#8221; and move the camera somewhere that encompassess the molecule throughout the entire animation (you could alternatively use key frames to move the camera between multiple locations throughout the shot).</p>
+
+<figure><img src="../assets/blog/projections/Screen-Shot-2022-11-28-at-10.58.15-PM.png" alt="Screenshot for this step" loading="lazy"></figure>
+
+<p>17) Setup the lighting</p>
+
+<p>You can either add lights to the scene or apply an HDRI environmental texture (as described here <a href="../blog/3d-animations-dft-trajectories-blender.html">/blog/3d-animations-dft-trajectories-blender.html</a>)</p>
+
+<p>I prefer to use &#8220;Area lights&#8221; if using lights, and using multiple lights from different angles will make the scene look better.</p>
+
+<p>18) Setup the &#8220;Render Properties&#8221;</p>
+
+<p>Cycles will look more photorealistic than Eevee, you only need 4-20 max samples for cycles.</p>
+
+<figure><img src="../assets/blog/projections/Screen-Shot-2022-11-28-at-11.03.23-PM.png" alt="Screenshot for this step" loading="lazy"></figure>
+
+<p>19) Setup the Output properties</p>
+
+<p>We will output to .png files (using RGBA) and then build a movie in post-processing</p>
+
+<figure><img src="../assets/blog/projections/Screen-Shot-2022-11-28-at-11.04.58-PM.png" alt="Screenshot for this step" loading="lazy"></figure>
+
+<p>20) Setup the materials properties</p>
+
+<p>Optionally, use the Shader Editor to change the colors and properties of each atom type. As an example, I will make the chromium atoms emissive and the other atoms highly specular</p>
+
+<p>21) Press &#8216;A&#8217; to select all the atoms, right click, and &#8216;Shade Auto Smooth&#8217;</p>
+
+<p>22) Remember to save. Do it before rendering</p>
+
+<p>23) Render the animation (&#8220;Render -&gt; Render Animation&#8221;)</p>
+
+<p>24) Open the &#8220;Video Editor&#8221; tab</p>
+
+<p>Double the number of frames (here I&#8217;m going from 50 to 100)</p>
+
+<p>&#8220;Add -&gt; Image/Sequence&#8221; and select the rendered frames</p>
+
+<p>Press &#8220;shift-D&#8221; and &#8220;g 50&#8221; to duplicate and shift forward 50 frames</p>
+
+<p>Select the second set of frames and press &#8220;Video -&gt; Reverse Frames&#8221;</p>
+
+<p>Put both sets of image sequences in Channel 2</p>
+
+<p>In channel 1, &#8220;Add -&gt; Color&#8221; and add 101 frames</p>
+
+<p>Set the color to either white or black</p>
+
+<figure><img src="../assets/blog/projections/Screen-Shot-2022-11-28-at-11.17.37-PM.png" alt="Screenshot for this step" loading="lazy"></figure>
+
+<p>Under &#8220;Output Properties&#8221;, change the file format to &#8220;FFmpeg video&#8221; and in the drop down select &#8220;H264 in MP4&#8221;</p>
+
+<p>Save</p>
+
+<p>Then &#8220;Render Animation&#8221; to make a .mp4 file</p>
+
+<p>Alternatively, you can rerender these as .png files and use a separate software to make a .gif. I typically use the free software GIMP to generate .gif files</p>
+
+<p>25) Enjoy watching the animation!</p>
+
+<figure><img src="../assets/blog/projections/ezgif-2-a4885847a1.gif" alt="The finished animation" loading="lazy"></figure>
+    <p><a href="../blog/index.html">← All posts</a></p>
+    </article>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <nav aria-label="Profiles">
+        <a href="mailto:juliuso@princeton.edu">Email</a>
+        <span>·</span>
+        <a href="https://scholar.google.com/citations?user=2yNJuKkAAAAJ&amp;hl=en">Google Scholar</a>
+        <span>·</span>
+        <a href="https://orcid.org/0000-0002-5988-0677">ORCID</a>
+        <span>·</span>
+        <a href="https://www.linkedin.com/in/julius-oppenheim-a59779283/">LinkedIn</a>
+        <span>·</span>
+        <a href="https://github.com/JulesOpp">GitHub</a>
+        <span>·</span>
+        <a href="https://bsky.app/profile/jules-oppenheim.bsky.social">Bluesky</a>
+    </nav>
+    <p>© 2026 Julius Oppenheim</p>
+  </div>
+</footer>
+</body>
+</html>

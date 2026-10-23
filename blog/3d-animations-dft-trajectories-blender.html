@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>3D animations of DFT trajectories in Blender · Julius Oppenheim</title>
+  <meta name="description" content="Optimizing a DALL-E molecule with ORCA and rendering its relaxation trajectory as an animation in Blender.">
+  <link rel="stylesheet" href="../assets/style.css">
+  <link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+  <script src="../assets/theme.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap">
+    <a class="site-name" href="../index.html">Julius Oppenheim</a>
+    <nav class="site-nav" aria-label="Main">
+      <a href="../index.html">Home</a>
+      <a href="../publications.html">Publications</a>
+      <a href="../software.html">Software</a>
+      <a href="../water-database.html">Water Database</a>
+      <a href="../blog/index.html" aria-current="page">Blog</a>
+      <a href="../cv.html">CV</a>
+      <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light and dark mode" hidden><svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v2.5M12 20v2.5M1.5 12H4M20 12h2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8"/></svg><svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"/></svg></button>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+    <article class="prose">
+    <h1>3D animations of DFT trajectories in Blender</h1>
+    <p class="date"><time datetime="2022-08-28">August 28, 2022</time></p>
+<p>Hi all,</p>
+
+<p>This is my first blog post, in which I&#8217;m going to explain how the animation from <a href="https://twitter.com/Jules_Oppenheim/status/1558944080306049024">https://twitter.com/Jules_Oppenheim/status/1558944080306049024</a> was created.</p>
+
+<p>The concept behind this animation is to begin with a molecule that the AI, DALL-E, has created, and watch the molecule as it relaxes to its ground state configuration. </p>
+
+<figure><img src="../assets/blog/dft-trajectories/dalle-molecule.jpg" alt="The DALL-E molecule used as the starting point" loading="lazy"></figure>
+
+<p>The first step is to create a .xyz file, containing a close approximation to the DALL-E creation. This can be accomplished using any  computational chemistry software that contains a model building, including Avogadro, ADF, or Materials Studio. In this case, I chose to use Maestro (a free version can be downloaded from <a href="https://www.schrodinger.com/products/maestro">https://www.schrodinger.com/products/maestro</a>). In the DALL-E image, we can assume by convention that the gray spheres are carbon, the red spheres are oxygen, and the white spheres are hydrogen. The identity of the purple is up to free interpretation, so here we can choose iodine.</p>
+
+<figure><img src="../assets/blog/dft-trajectories/Screen-Shot-2022-08-28-at-8.04.48-PM-1024x639.png" alt="Screenshot for this step" loading="lazy"></figure>
+
+<p>The second step is to perform some sort of geometry optimization calculation. Given that accuracy is not of grave importance, we can settle for one of the cheapest DFT calculation, the BP86 functional with the def2-SVP basis set. The following code can be fed as an input file to the free computational chemistry package Orca (<a href="https://orcaforum.kofo.mpg.de/">https://orcaforum.kofo.mpg.de/</a>).</p>
+
+<pre><code>! BP86 def2-svp opt
+
+%geom
+maxiter 500
+end
+
+*xyz 0 1
+C    2.52090    2.68140    -1.30450
+O    1.43580    2.17400    -1.58370
+H    2.93990    2.63990    -0.29680
+H    3.12710    3.18670    -2.05260
+O    3.31800    1.57710    -0.20030
+C    3.01120    0.39370    -0.19850
+O    3.45230    0.23170    1.02630
+I    2.38560    -0.94730    -0.28460
+O    3.66110    3.59910    0.58280
+C    3.76810    2.71210    1.61100
+C    3.65840    1.39850    1.99460
+C    3.53580    -0.09250    2.28610
+I    3.51530    0.41740    3.52360
+*</code></pre>
+
+<p>After the calculation has finished, the trajectory of the molecule will be written into file called #_trj.xyz. This information can be directly used to make a 3D animation, using the free software Blender (<a href="https://www.blender.org/">https://www.blender.org/</a>). Enable the preinstalled package &#8220;Import-Export: Atomic Blender PDB/XYZ&#8221;.</p>
+
+<figure><img src="../assets/blog/dft-trajectories/Screen-Shot-2022-08-28-at-7.54.52-PM-1024x761.png" alt="Screenshot for this step" loading="lazy"></figure>
+
+<p>Then you are ready to import (File-&gt;Import-&gt;#_trj.xyz) the trajectory.</p>
+
+<figure><img src="../assets/blog/dft-trajectories/Screen-Shot-2022-08-28-at-7.55.35-PM-1024x761.png" alt="Screenshot for this step" loading="lazy"></figure>
+
+<p>Now it&#8217;s time to create the background scene and change the shading.</p>
+
+<p>The background is composed of three different elements.</p>
+
+<p>1) Under the &#8216;World Properties&#8217; tab, then surface can be set to an environmental texture/HDRI downloaded for free from <a href="https://polyhaven.com/">https://polyhaven.com/</a>. In this case, a scene of a pool was selected. The environmental texture will make the lighting of the scene look realistic without the need to add any light objects explicitely.</p>
+
+<p>2) In the foreground of the scene, a simple liquid domain/flow emitter pair can be setup such that the water column will have realistic looking waves.</p>
+
+<figure><img src="../assets/blog/dft-trajectories/Screen-Shot-2022-08-28-at-7.56.49-PM-1024x564.png" alt="Screenshot for this step" loading="lazy"></figure>
+
+<figure><img src="../assets/blog/dft-trajectories/Screen-Shot-2022-08-28-at-7.56.56-PM-1024x564.png" alt="Screenshot for this step" loading="lazy"></figure>
+
+<p>The color of the liquid can be set to a slightly blue color to give it the effect of being water.</p>
+
+<figure><img src="../assets/blog/dft-trajectories/Screen-Shot-2022-08-28-at-8.41.49-PM.png" alt="Screenshot for this step" loading="lazy"></figure>
+
+<p>3) In the background of a scene, a fake pond surface will be used. This will save some computation time to calculate on the waves in the region that the camera will be focused on. This can be accomplished by extruding and beveling a plane.</p>
+
+<figure><img src="../assets/blog/dft-trajectories/Screen-Shot-2022-08-28-at-8.35.03-PM-1024x320.png" alt="Screenshot for this step" loading="lazy"></figure>
+
+<p>To make this flat plane look more realistic, we can feed a noise texture into a bump map into the normals of the shader of the plane. This will add distortions to the way that the plane reflects light. The roughness of the plane should also be set to zero.</p>
+
+<figure><img src="../assets/blog/dft-trajectories/Screen-Shot-2022-08-28-at-8.39.41-PM-1024x666.png" alt="Screenshot for this step" loading="lazy"></figure>
+
+<p>If you imported the #_trj.xyz file as a Mesh (as opposed to NURBS or Meta), then to change the shading you should select the hidden parent object and select &#8216;Use Nodes&#8217;. This will allow you to use the Shader Editor to finely tune the look of the atoms.</p>
+
+<figure><img src="../assets/blog/dft-trajectories/Screen-Shot-2022-08-28-at-8.45.01-PM-509x1024.png" alt="Screenshot for this step" loading="lazy"></figure>
+
+<p>The final touches can now be made.</p>
+
+<ul>
+<li>For rendering, I recommend using Cycles instead of Eevee.</li>
+
+<li>Rendering between 4 and 20 samples per frame is usually enough.</li>
+
+<li>Under color management, the vew transform can be set to Filmic or Filmic Log.</li>
+
+</ul>
+
+<p>Now the movie can be rendered as a series of .png files.</p>
+
+<p>In the Video Editing tab, the sequence .png files can be added, placing a few frames of the first and last image at each end of the sequence to allow for clean visualizations of the starting and finishing geometries. This can now be rendered as a FFmpeg Video file.</p>
+
+<figure><img src="../assets/blog/dft-trajectories/Screen-Shot-2022-08-28-at-7.54.08-PM.png" alt="Screenshot for this step" loading="lazy"></figure>
+
+<p>The result speaks for itself</p>
+
+<figure><img src="../assets/blog/dft-trajectories/ezgif-4-71487091e6.gif" alt="The finished animation" loading="lazy"></figure>
+    <p><a href="../blog/index.html">← All posts</a></p>
+    </article>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <nav aria-label="Profiles">
+        <a href="mailto:juliuso@princeton.edu">Email</a>
+        <span>·</span>
+        <a href="https://scholar.google.com/citations?user=2yNJuKkAAAAJ&amp;hl=en">Google Scholar</a>
+        <span>·</span>
+        <a href="https://orcid.org/0000-0002-5988-0677">ORCID</a>
+        <span>·</span>
+        <a href="https://www.linkedin.com/in/julius-oppenheim-a59779283/">LinkedIn</a>
+        <span>·</span>
+        <a href="https://github.com/JulesOpp">GitHub</a>
+        <span>·</span>
+        <a href="https://bsky.app/profile/jules-oppenheim.bsky.social">Bluesky</a>
+    </nav>
+    <p>© 2026 Julius Oppenheim</p>
+  </div>
+</footer>
+</body>
+</html>

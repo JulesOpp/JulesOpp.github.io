@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Water Database · Julius Oppenheim</title>
+  <meta name="description" content="Water sorption steps and capacities for MOFs and COFs, with an interactive plot, CSV downloads, and the isoreticular-curves model that explains them.">
+  <link rel="stylesheet" href="assets/style.css">
+  <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
+  <script src="assets/theme.js"></script>
+  <script src="data/water-data.js" defer></script>
+  <script src="assets/water-database.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap">
+    <a class="site-name" href="index.html">Julius Oppenheim</a>
+    <nav class="site-nav" aria-label="Main">
+      <a href="index.html">Home</a>
+      <a href="publications.html">Publications</a>
+      <a href="software.html">Software</a>
+      <a href="water-database.html" aria-current="page">Water Database</a>
+      <a href="blog/index.html">Blog</a>
+      <a href="cv.html">CV</a>
+      <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light and dark mode" hidden><svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v2.5M12 20v2.5M1.5 12H4M20 12h2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8"/></svg><svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"/></svg></button>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+    <h1>Water Database</h1>
+    <article class="prose">
+    <p class="lede">For more information, see our paper “<a href="https://doi.org/10.1021/jacs.4c02743">Isoreticular Curves: A Theory of Capillary Condensation To Model Water Sorption within Microporous Sorbents</a>” (<em>J. Am. Chem. Soc.</em> 2024, 146, 20615).</p>
+
+    <h2 id="sorbents">Curated database for properties of MOFs and COFs</h2>
+    <figure class="plot-figure" id="water-plot">
+      <img src="assets/water/updated-1024x542.png" alt="Maximum capacity versus relative humidity for MOFs and COFs in the database, with the bounding curve" width="1024" height="542">
+    </figure>
+    <p class="needs-data note" hidden>The plot and tables are built from <code>data/water-data.js</code>; it did not load.</p><noscript><p class="note">The plot, tables and CSV downloads need JavaScript.</p></noscript>
+    <p>Each point on the plot corresponds to the relative humidity at which water uptake step occurs and the maximum gravimetric capacity for a single sorbent. Note that sorbents with high capacity at low humidity (shaded) are systematically absent. This region is bounded by a curve with a functional form that can be derived from first principles</p>
+    <math display="block"><mrow><msub><mi>Q</mi><mi>max</mi></msub><mo>=</mo><mo>&#x2212;</mo><mn>0.25</mn><msup><mrow><mo>(</mo><mfrac><mn>1</mn><mrow><mi>ln</mi><mo>&#x2061;</mo><mi>&#x3B1;</mi></mrow></mfrac><mo>)</mo></mrow><mn>2</mn></msup><mo>&#x2212;</mo><mn>1.75</mn><mrow><mo>(</mo><mfrac><mn>1</mn><mrow><mi>ln</mi><mo>&#x2061;</mo><mi>&#x3B1;</mi></mrow></mfrac><mo>)</mo></mrow></mrow></math>
+    <p class="note">The functional form can be derived from first principles, while the coefficients are fit to the most hydrophilic isoreticular curve currently accessible. As such, the bound may be treated as an analogue to a Robeson limit for membrane separation, as it is not a theoretical limit, but instead the current practical limit. The plot is generated directly from the MOF and COF tables below and is updated as the database is updated.</p>
+
+    <h2 id="data">Data</h2>
+    <h3>MOF water sorption database</h3>
+    <p class="download">Download: <a data-csv="mof" href="#" download="mof-water-sorption.csv">mof-water-sorption.csv</a></p>
+    <details>
+      <summary>Show table</summary>
+      <div class="table-scroll" id="table-mof"></div>
+    </details>
+    <h3>COF water sorption database</h3>
+    <p class="download">Download: <a data-csv="cof" href="#" download="cof-water-sorption.csv">cof-water-sorption.csv</a></p>
+    <details>
+      <summary>Show table</summary>
+      <div class="table-scroll" id="table-cof"></div>
+    </details>
+
+    <h2 id="theory">Why the step happens where it does</h2>
+    <figure><img src="assets/water/step-isotherms.png" alt="Model water isotherms with sharp uptake steps at different relative humidities, and the humidity windows used by desiccants, heat pumps and water harvesters, desalination, and humidity control" width="1200" height="1109" loading="lazy" style="max-width:min(30rem, 100%)"></figure>
+    <p>Fundamental to many water sorption applications is the sharp and sudden onset of pore filling at a particular relative humidity (RH). This phenomenon, termed capillary condensation, allows for large amounts of water and heat to be cycled over a narrow pressure region. The RH for capillary condensation (<i>α</i> = <i>P</i>/<i>P</i><sub>sat</sub>) can be related to the hydrophilicity of the framework, specifically the difference in Gibbs free energy of water at the pore–framework interface relative to bulk water (Δ<i>G</i><sub>int</sub>), and the maximum pore radius (<i>r</i>):</p>
+    <math display="block"><mrow><mi>ln</mi><mo>&#x2061;</mo><mi>&#x3B1;</mi><mo>=</mo><mfrac><mrow><mn>2</mn><mi>V</mi></mrow><mrow><mi>A</mi><mi>k</mi><mi>T</mi></mrow></mfrac><mfrac><mrow><mi>&#x394;</mi><msub><mi>G</mi><mi>int</mi></msub></mrow><mi>r</mi></mfrac><mo>&#x2248;</mo><mfrac><mrow><mn>1.4</mn><mspace width="0.2em"></mspace><mi>&#x394;</mi><msub><mi>G</mi><mi>int</mi></msub></mrow><mi>r</mi></mfrac></mrow></math>
+    <p>where <i>V</i> is the volume of a molecule of water (calculated from the kinetic diameter), <i>A</i> is the projected interfacial area of a molecule of water, <i>k</i> is the Boltzmann constant, and <i>T</i> is the temperature. The pore radius is taken as the radius of the maximally included sphere, as capillary condensation is limited by the largest cavity. The pre-factor 2<i>V</i>/<i>AkT</i> may be approximated, assuming a kinetic diameter of water of 2.65 Å and 25 °C, to be 1.4 Å·mol/kJ.</p>
+    <p>The maximum gravimetric capacity (<i>Q</i><sub>g</sub>) also scales with the maximal pore radius, enabling a direct relationship between the critical RH for capillary condensation and the gravimetric capacity for uptake. This relationship, which we term isoreticular curves, details how the properties for water sorption will respond to an isoreticular expansion of a framework, for a given pore size, topology, and density and volume of framework constituents. Importantly, for an isoreticular series, simply increasing the pore size (by linker expansion) will cause an increase in the critical RH. In order to find sorbents with high capacity at low RH, it is necessary to increase the hydrophilicity of the framework.</p>
+    <figure><img src="assets/img/isoreticular-curves.png" alt="Isoreticular curves of maximum capacity against relative humidity: changing pore radius moves a sorbent along a curve, changing ΔG moves it between curves, and changing efficiency moves it up or down" width="1475" height="800" loading="lazy">
+      <figcaption>Modulation of an isoreticular curve in response to changes in pore size, hydrophilicity, and packing efficiency.</figcaption></figure>
+
+    <h3>Continuous modulation of pore composition</h3>
+    <p>The relationship between the critical RH and Δ<i>G</i><sub>int</sub> is particularly valuable for the description of sorbents in which the pore environment varies continuously (i.e., solid solutions). For a system with variation between components A and B, with molar fractions <i>x</i><sub>A</sub> and <i>x</i><sub>B</sub>, the average Gibbs free energy can be expressed as Δ<i>G</i><sub>int</sub> = <i>x</i><sub>A</sub>Δ<i>G</i><sub>A</sub> + <i>x</i><sub>B</sub>Δ<i>G</i><sub>B</sub>. This behavior has been observed in several systems, including MOF-303/MOF-333, mixed-metal MFU-4l, MOF-303/CAU-23, and mixed-metal, mixed-anion CFA-1. In fact, deviations from this behavior may be used to detect structural changes in the respective continuous series.</p>
+    <figure><img src="assets/water/fig2-solid-solutions.png" alt="Four panels of step relative humidity versus composition for MOF-303/MOF-333, Zn/Co-MFU-4l, MOF-303/CAU-23, and (Zn,Ni)(OAc,Cl)-CFA-1, with the model curve through the data" width="714" height="725" loading="lazy" style="max-width:min(36rem, 100%)">
+      <figcaption>(a) Variation between MOF-303 and MOF-333 (pyrazole and furan dicarboxylate). (b) Variation between Zn-MFU-4l and Co-MFU-4l. (c) Variation between MOF-303 and CAU-23 (pyrazole and thiophene dicarboxylate). Phase change occurs at 20% fractional composition. (d) Continuous variation of two independent components (reduced to one coordinate).</figcaption></figure>
+
+    <h3>A hydrophilicity scale from a curated dataset</h3>
+    <p>By regressing upon this relationship using a curated dataset of 96 frameworks containing 32 compositional types (as defined by linker backbone, secondary building unit (SBU), and functional group), an energy scale quantifying the hydrophilicity of frameworks can be determined. The adjusted <i>R</i><sup>2</sup> value for the regression is 0.96, with 89% of the data captured within ±10 %RH of the experimentally determined <i>α</i> value, and 97% of the data captured within ±20 %RH. The fit values for Δ<i>G</i><sub>int</sub> form a hydrophilicity scale for the different composition types, enabling rational chemical design to affect the RH for capillary condensation.</p>
+    <div class="gallery">
+      <figure><img src="assets/water/website2.jpg" alt="Predicted versus measured relative humidity for the 96 MOFs in the regression set" width="709" height="709" loading="lazy">
+        <figcaption>Parity plot of model with dotted lines depicting ±10 %RH and ±20 %RH deviations.</figcaption></figure>
+      <figure><img src="assets/water/image-1-1024x430.jpg" alt="Fitted interaction free energies, ΔG_int in kJ/mol, for each linker core, functional group and SBU type" width="1024" height="430" loading="lazy">
+        <figcaption>Model determined Gibbs free energy for binding water at the pore water–MOF interface at different composition types. The asterisk indicates composition types that only have one example in the dataset.</figcaption></figure>
+    </div>
+    <p>The isoreticular curve concept may also be tested against experimental data in which water sorption has been measured across an isoreticular series of frameworks, such as the Ni<sub>8</sub>L<sub>#</sub> series or MCM-41 variants with variable pore size and constant hydrophilicity. For both of these series, the relationship between the accessible volume and the critical RH follows the isoreticular curve well.</p>
+
+    <h2 id="regression">Regression</h2>
+    <p>The RH for condensation was taken as the RH at half of maximum capacity (on the adsorption branch), the pore radius was calculated from the maximally included sphere (<i>r</i> = LCD/2), and the pre-factor was taken as 1.4 Å·mol/kJ (2 × 0.714 in the code below). Δ<i>G</i><sub>int</sub> was averaged by normalizing the energy to the total number of metals and linker types. To make a plot of RH vs capacity, please include the data from both tables.</p>
+    <p class="download">Download: <a data-csv="regression" href="#" download="regression-set.csv">regression-set.csv</a> (96 materials, 32 parameters; data/parameter = 3.00)</p>
+    <details>
+      <summary>Regression set table</summary>
+      <div class="table-scroll" id="table-regression"></div>
+    </details>
+    <details>
+      <summary>Mathematica code and fitted parameters</summary>
+<pre><code>nlm = NonlinearModelFit[
+  data, {E^(2*0.714/(lcd/2)*({a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13,
+      a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25,
+      a26, a27, a28, a29, a30, a31, a32} . {lbenz, larom, lthio,
+      lfura, lpyra, lpyri, lalke, lazo, fnh3cl, fnh2, fso3h, foh,
+      fcooh, fome, fno2, fnhme, fnhcyp, fch3, fc2h5, fcf3, fc2f5,
+      xome*nor, mzr*nor, mcr*nor, mal*nor, mti*nor, mhf*nor,
+      mnicar*nor, mzncar*nor, cucar*nor, my*nor,
+      mnipyr*nor})/(Total[{lbenz, larom, lthio, lfura, lpyra, lpyri, lalke, lazo,
+      mzr*nor, mcr*nor, mal*nor, mti*nor, mhf*nor, mnicar*nor, mzncar*nor,
+      cucar*nor, my*nor, mnipyr*nor}]))}, {a1, a2, a3, a4, a5, a6, a7, a8, a9, a10,
+  a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23,
+  a24, a25, a26, a27, a28, a29, a30, a31, a32}, {lcd, lbenz, larom,
+  lthio, lfura, lpyra, lpyri, lalke, lazo, fnh3cl, fnh2, fso3h, foh,
+  fcooh, fome, fno2, fnhme, fnhcyp, fch3, fc2h5, fcf3, fc2f5, xome,
+  mzr, mcr, mal, mti, mhf, mnicar, mzncar, cucar, my, mnipyr, nor},
+  MaxIterations -&gt; 10000]
+
+nlm["RSquared"]
+-&gt; 0.974133
+
+nlm["AdjustedRSquared"]
+-&gt; 0.9612
+
+nlm["BestFitParameters"]
+-&gt; {a1 -&gt; -2.10906, a2 -&gt; 0.0805185, a3 -&gt; -0.172253, a4 -&gt; -1.61392,
+    a5 -&gt; -4.85542, a6 -&gt; -6.71165, a7 -&gt; -0.185092, a8 -&gt; 4.88506,
+    a9 -&gt; -3.70125, a10 -&gt; -1.10911, a11 -&gt; -8.24841, a12 -&gt; -2.08043,
+    a13 -&gt; -1.02591, a14 -&gt; 0.60088, a15 -&gt; 1.27376, a16 -&gt; -2.21946,
+    a17 -&gt; 0.680827, a18 -&gt; 1.84476, a19 -&gt; 2.55759, a20 -&gt; 1.71299,
+    a21 -&gt; 6.55719, a22 -&gt; 4.20624, a23 -&gt; -7.42209, a24 -&gt; -18.3026,
+    a25 -&gt; -5.27035, a26 -&gt; -10.9464, a27 -&gt; -5.81818, a28 -&gt; -17.5136,
+    a29 -&gt; -14.103, a30 -&gt; -7.28204, a31 -&gt; -0.942191, a32 -&gt; -6.79632}
+
+nlm["ParameterErrors"]
+-&gt; {0.731827, 0.560999, 0.932505, 1.26811, 1.30109, 2.28484, 0.731331,
+    1.7948, 3.33006, 1.38964, 5.70549, 0.849904, 1.60553, 0.862944,
+    1.21459, 4.8193, 4.1845, 0.467562, 0.583968, 0.600266, 1.00153,
+    0.805048, 0.798352, 2.13928, 0.706503, 1.88895, 1.22613, 3.08362,
+    3.78418, 1.47402, 1.70368, 1.06559}
+
+Rasterize[MatrixPlot[nlm["CorrelationMatrix"], PlotLegends -&gt; Automatic]]</code></pre>
+      <figure><img src="assets/water/image.png" alt="Correlation matrix of the 32 fitted parameters" width="850" height="730" loading="lazy" style="max-width:min(26rem, 100%)">
+        <figcaption>Correlation matrix of the fitted parameters.</figcaption></figure>
+    </details>
+
+    <h2 id="cite">How to cite</h2>
+    <p>J. J. Oppenheim and M. Dincă, “Isoreticular Curves: A Theory of Capillary Condensation To Model Water Sorption within Microporous Sorbents,” <em>J. Am. Chem. Soc.</em> <b>146</b>(30), 20615–20626 (2024). <a href="https://doi.org/10.1021/jacs.4c02743">doi:10.1021/jacs.4c02743</a></p>
+    </article>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <nav aria-label="Profiles">
+        <a href="mailto:juliuso@princeton.edu">Email</a>
+        <span>·</span>
+        <a href="https://scholar.google.com/citations?user=2yNJuKkAAAAJ&amp;hl=en">Google Scholar</a>
+        <span>·</span>
+        <a href="https://orcid.org/0000-0002-5988-0677">ORCID</a>
+        <span>·</span>
+        <a href="https://www.linkedin.com/in/julius-oppenheim-a59779283/">LinkedIn</a>
+        <span>·</span>
+        <a href="https://github.com/JulesOpp">GitHub</a>
+        <span>·</span>
+        <a href="https://bsky.app/profile/jules-oppenheim.bsky.social">Bluesky</a>
+    </nav>
+    <p>© 2026 Julius Oppenheim</p>
+  </div>
+</footer>
+</body>
+</html>

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Software · Julius Oppenheim</title>
+  <meta name="description" content="Software by Julius Oppenheim, including Crystal Builder, a desktop application for crystal structures.">
+  <link rel="stylesheet" href="assets/style.css">
+  <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
+  <script src="assets/theme.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap">
+    <a class="site-name" href="index.html">Julius Oppenheim</a>
+    <nav class="site-nav" aria-label="Main">
+      <a href="index.html">Home</a>
+      <a href="publications.html">Publications</a>
+      <a href="software.html" aria-current="page">Software</a>
+      <a href="water-database.html">Water Database</a>
+      <a href="blog/index.html">Blog</a>
+      <a href="cv.html">CV</a>
+      <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light and dark mode" hidden><svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v2.5M12 20v2.5M1.5 12H4M20 12h2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8"/></svg><svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"/></svg></button>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+    <h1>Software</h1>
+    <p class="lede">Scientific software I have written. Source code is on <a href="https://github.com/JulesOpp">GitHub</a>.</p>
+    <ul class="entries">
+      <li>
+        <h2>Crystal Builder</h2>
+        <figure class="shot"><img src="assets/img/crystal-builder-window.jpg" alt="The Crystal Builder window with HKUST-1 open: structure and workspace panels on the left, the 3D view with pores and rings in the middle, style controls on the right, and a surface-area result below" width="1600" height="965" loading="lazy"></figure>
+        <p>A desktop application for building, manipulating, analysing and exporting crystal structures, written in Python for macOS, Windows and Linux. Its visual and interaction model take some inspiration from VESTA, and its symmetry and force-field capability from Materials Studio.</p>
+        <p>It reads and writes CIF and other common structure formats; handles space groups, supercells and slabs; builds metal–organic frameworks on topological nets; relaxes structures with force fields (UFF and UFF4MOF), tight-binding methods (DFTB+, xTB) and machine-learned potentials (MACE, ORB-v3, MatterSim); computes porosity and powder X-ray diffraction patterns; and refines against measured powder patterns (Pawley and Rietveld).</p>
+        <p class="links"><a href="https://github.com/JulesOpp/Crystal-Builder/releases/tag/v1.0.0">Download v1.0.0</a> <a href="https://github.com/JulesOpp/Crystal-Builder">Source on GitHub</a></p>
+      </li>
+      <li>
+        <h2>Phase Tiles <span class="tag">Coming soon</span></h2>
+        <figure class="shot"><img src="assets/img/phase-tiles.png" alt="Phase Tiles output for the square net: (a) a grid of tiles over J1 and J2, each showing the average-cell scattering of one Monte Carlo run; (b) the same grid coloured by phase, with disordered, ferro and two modulated phases" width="1800" height="863" loading="lazy"></figure>
+        <p>A desktop application for tiled Ising phase diagrams on any 2D RCSR net. Each tile is one Monte Carlo run, drawn as its average-cell scattering folded into one Brillouin zone, so a whole phase diagram can be read at a glance as the scattering a diffraction experiment would see; clicking a tile shows its domains. The same core runs from the command line for scripted sweeps.</p>
+      </li>
+      <li>
+        <h2>Isosteric Enthalpy of Adsorption</h2>
+        <p>Calculates isosteric enthalpies of adsorption from variable-temperature isotherm data, with error propagation.</p>
+        <p class="links"><a href="https://github.com/JulesOpp/IsostericEnthalpyOfAdsorption">Source on GitHub</a></p>
+      </li>
+      <li>
+        <h2>Tanabe–Sugano diagrams</h2>
+        <figure class="shot"><img src="assets/img/tanabe-sugano-d2.png" alt="Tanabe–Sugano diagram for a d2 ion: term energies E/B plotted against ligand-field strength Dq/B, with each term labelled" width="1600" height="923" loading="lazy"></figure>
+        <p>Exact solutions of the Tanabe–Sugano diagrams for d<sup>1</sup>–d<sup>9</sup> systems, computed in Mathematica. The plots can be adjusted for different C/B ratios, and a solver predicts Dq, B and C.</p>
+        <p class="links"><a href="https://github.com/JulesOpp/Tanabe-Sugano">Source on GitHub</a></p>
+      </li>
+      <li>
+        <h2>Species concentration vs pH</h2>
+        <figure class="shot"><img src="assets/img/species-concentration-triprotic.png" alt="Log species concentration against pH for a triprotic acid, showing H3A, H2A−, HA2−, A3−, H+ and OH−" width="1600" height="960" loading="lazy"></figure>
+        <p>Plots log species concentration against pH for acid–base chemistry.</p>
+        <p class="links"><a href="https://github.com/JulesOpp/Species-Concentration-vs-pH">Source on GitHub</a></p>
+      </li>
+    </ul>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <nav aria-label="Profiles">
+        <a href="mailto:juliuso@princeton.edu">Email</a>
+        <span>·</span>
+        <a href="https://scholar.google.com/citations?user=2yNJuKkAAAAJ&amp;hl=en">Google Scholar</a>
+        <span>·</span>
+        <a href="https://orcid.org/0000-0002-5988-0677">ORCID</a>
+        <span>·</span>
+        <a href="https://www.linkedin.com/in/julius-oppenheim-a59779283/">LinkedIn</a>
+        <span>·</span>
+        <a href="https://github.com/JulesOpp">GitHub</a>
+        <span>·</span>
+        <a href="https://bsky.app/profile/jules-oppenheim.bsky.social">Bluesky</a>
+    </nav>
+    <p>© 2026 Julius Oppenheim</p>
+  </div>
+</footer>
+</body>
+</html>
