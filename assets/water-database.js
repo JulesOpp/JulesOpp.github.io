@@ -92,14 +92,14 @@
 
   function drawPlot(figure, points) {
     var narrow = figure.clientWidth < 520; // phones get a smaller canvas so labels stay legible
-    var W = narrow ? 400 : 640, H = narrow ? 330 : 420, m = { l: narrow ? 48 : 56, r: 16, t: 12, b: 46 };
+    var W = narrow ? 400 : 640, H = narrow ? 360 : 440, m = { l: narrow ? 62 : 70, r: 18, t: 16, b: narrow ? 58 : 62 };
     var yMax = Math.max(BOUND_MAX_Q, Math.ceil(Math.max.apply(null, points.map(function (p) { return p.q; })) * 2) / 2);
     var x = function (v) { return m.l + (v / 100) * (W - m.l - m.r); };
     var y = function (v) { return H - m.b - (v / yMax) * (H - m.t - m.b); };
 
     var svg = el("svg", { viewBox: "0 0 " + W + " " + H, class: narrow ? "plot narrow" : "plot", role: "img",
       "aria-label": "Maximum gravimetric capacity versus relative humidity of the water uptake step for " + points.length + " MOFs and COFs" });
-    el("rect", { x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, class: "plot-frame" }, svg);
+    el("rect", { width: W, height: H, class: "plot-bg" }, svg);
 
     // Region above the bounding curve (high capacity at low humidity), which no sorbent reaches
     var line = [x(0) + "," + y(0)];
@@ -108,22 +108,33 @@
     el("path", { d: "M" + line.join(" L") + " L" + x(BOUND_END_RH).toFixed(1) + "," + y(yMax) + " L" + x(0) + "," + y(yMax) + " Z", class: "plot-forbidden" }, svg);
     el("polyline", { points: line.join(" "), class: "plot-bound" }, svg);
 
-    // Axes
-    for (var t = 0; t <= 100; t += 20) {
-      el("line", { x1: x(t), x2: x(t), y1: y(0), y2: y(0) + 5, class: "plot-tick" }, svg);
-      el("text", { x: x(t), y: y(0) + 20, "text-anchor": "middle", class: "plot-label" }, svg).textContent = t;
+    // Axes in the style of the figures below: closed box, inward major and minor ticks on all four sides
+    var top = y(yMax), bottom = y(0), left = x(0), right = x(100);
+    function xTick(v, len) {
+      el("line", { x1: x(v), x2: x(v), y1: bottom, y2: bottom - len, class: "plot-tick" }, svg);
+      el("line", { x1: x(v), x2: x(v), y1: top, y2: top + len, class: "plot-tick" }, svg);
     }
-    for (var v = 0; v <= yMax + 1e-9; v += 0.5) {
-      el("line", { x1: m.l - 5, x2: m.l, y1: y(v), y2: y(v), class: "plot-tick" }, svg);
-      el("text", { x: m.l - 9, y: y(v) + 4, "text-anchor": "end", class: "plot-label" }, svg).textContent = v.toFixed(1);
+    function yTick(v, len) {
+      el("line", { x1: left, x2: left + len, y1: y(v), y2: y(v), class: "plot-tick" }, svg);
+      el("line", { x1: right, x2: right - len, y1: y(v), y2: y(v), class: "plot-tick" }, svg);
     }
-    el("text", { x: (m.l + W - m.r) / 2, y: H - 8, "text-anchor": "middle", class: "plot-axis" }, svg).textContent = "Relative humidity of step (%)";
-    el("text", { x: -(m.t + H - m.b) / 2, y: 14, transform: "rotate(-90)", "text-anchor": "middle", class: "plot-axis" }, svg).textContent = "Max capacity (g/g)";
+    for (var t = 0; t <= 100; t += 10) {
+      xTick(t, t % 20 ? 4 : 8);
+      if (t % 20 === 0) el("text", { x: x(t), y: bottom + 22, "text-anchor": "middle", class: "plot-label" }, svg).textContent = t;
+    }
+    for (var v = 0; v <= yMax + 1e-9; v += 0.25) {
+      var major = Math.abs(v * 2 - Math.round(v * 2)) < 1e-9;
+      yTick(v, major ? 8 : 4);
+      if (major) el("text", { x: left - 8, y: y(v) + 5.5, "text-anchor": "end", class: "plot-label" }, svg).textContent = v.toFixed(1);
+    }
+    el("rect", { x: left, y: top, width: right - left, height: bottom - top, class: "plot-frame" }, svg);
+    el("text", { x: (left + right) / 2, y: H - 10, "text-anchor": "middle", class: "plot-axis" }, svg).textContent = "Relative Humidity (%)";
+    el("text", { x: -(top + bottom) / 2, y: 20, transform: "rotate(-90)", "text-anchor": "middle", class: "plot-axis" }, svg).textContent = "Maximum Capacity (g/g)";
 
     // Points, one group per series
     var shapes = {
-      circle: function (g, px, py) { return el("circle", { cx: px, cy: py, r: 3.6 }, g); },
-      square: function (g, px, py) { return el("rect", { x: px - 3.6, y: py - 3.6, width: 7.2, height: 7.2 }, g); }
+      circle: function (g, px, py) { return el("circle", { cx: px, cy: py, r: 4 }, g); },
+      square: function (g, px, py) { return el("rect", { x: px - 3.8, y: py - 3.8, width: 7.6, height: 7.6 }, g); }
     };
     var groups = {};
     SERIES.forEach(function (s) { groups[s.id] = el("g", { class: "plot-series " + s.id }, svg); });
