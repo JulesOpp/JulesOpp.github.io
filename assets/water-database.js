@@ -2,6 +2,11 @@
 // data/water-data.js, so editing the data there updates the whole page. Works served or opened from disk.
 (function () {
   var SVG = "http://www.w3.org/2000/svg";
+  // Short labels for the reviews the MOF table cites by reference number
+  var REVIEWS = {
+    "10.1021/acs.chemrev.9b00746": "Liu et al., Chem. Rev. 2020",
+    "10.1038/s41578-019-0140-1": "Rieth et al., Nat. Rev. Mater. 2019"
+  };
 
   // ---- CSV and table helpers
 
@@ -183,8 +188,17 @@
       readout.textContent = "";
       var b = document.createElement("strong"); b.textContent = p.name;
       readout.appendChild(b);
-      readout.appendChild(document.createTextNode(": step at " + fmt(p.rh) + "% RH, " + p.q + " g/g · " + SERIES_BY_ID[p.series].label + (p.ref ? " · " : "")));
-      if (p.ref) readout.appendChild(cellNode(p.ref));
+      readout.appendChild(document.createTextNode(": step at " + fmt(p.rh) + "% RH, " + p.q + " g/g · " + SERIES_BY_ID[p.series].label));
+      if (p.ref.review) {
+        readout.appendChild(document.createTextNode(" · Review: "));
+        var rv = cellNode(p.ref.review);
+        if (rv.href) rv.textContent = (REVIEWS[p.ref.review] || p.ref.review) + (p.ref.num ? ", ref. " + p.ref.num : "");
+        readout.appendChild(rv);
+      }
+      if (p.ref.original) {
+        readout.appendChild(document.createTextNode(" · Original: "));
+        readout.appendChild(cellNode(p.ref.original));
+      }
       if (p === pinned) readout.appendChild(document.createTextNode(" (click again to unselect)"));
     }
     function unpin() {
@@ -234,10 +248,10 @@
   renderTable(mof, document.getElementById("table-mof"), false);
   renderTable(cof, document.getElementById("table-cof"), false);
   renderTable(reg.slice(1), document.getElementById("table-regression"), true); // row 1 is a fit summary
-  var isReview = function (r) { return /^[\d,\s]+$/.test(r[3].trim()); }; // numbered refs point into the Chem. Rev. compilation
+  // MOF columns 3-5: ref # in the review, the review's DOI, the original paper's DOI
   var points = toPoints(mof, function () { return "s-mof"; },
-      0, function (r) { return isReview(r) ? "10.1021/acs.chemrev.9b00746" : r[3]; })
-    .concat(toPoints(cof, function () { return "s-cof"; }, 0, function (r) { return r[5]; }));
+      0, function (r) { return { num: r[3].trim(), review: r[4].trim(), original: r[5].trim() }; })
+    .concat(toPoints(cof, function () { return "s-cof"; }, 0, function (r) { return { original: r[5].trim() }; }));
   drawPlot(document.getElementById("water-plot"), points);
   var named = function (rows) { return rows.slice(1).filter(function (r) { return r[0].trim(); }).length; };
   document.querySelectorAll("[data-count]").forEach(function (n) {
