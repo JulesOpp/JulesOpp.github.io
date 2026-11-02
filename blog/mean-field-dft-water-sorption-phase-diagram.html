@@ -34,7 +34,7 @@
 <p><a href="../blog/dft_phase_map_explorer.html">Open the explorer full screen</a></p>
 
 <div class="embed">
-  <iframe id="explorer" src="../blog/dft_phase_map_explorer.html" title="Mean-field DFT water sorption phase diagram explorer" loading="lazy"></iframe>
+  <iframe id="explorer" src="../blog/dft_phase_map_explorer.html" title="Mean-field DFT water sorption phase diagram explorer"></iframe>
 </div>
     <p><a href="../blog/index.html">← All posts</a></p>
     </article>
@@ -60,13 +60,16 @@
   </div>
 </footer>
 <script>
-// Size the embedded explorer to its content and pass the site's light/dark choice into it.
+// Size the embedded explorer to its content, let it use the full width and pass the site's light/dark choice into it.
 (function () {
   var frame = document.getElementById("explorer");
   var root = document.documentElement;
   frame.addEventListener("load", function () {
     var doc = frame.contentDocument;
-    if (!doc) return;
+    if (!doc || !doc.body) return;
+    var wide = doc.createElement("style");
+    wide.textContent = ".wrap { max-width: none; }";
+    doc.head.appendChild(wide);
     function fit() { frame.style.height = doc.documentElement.scrollHeight + "px"; }
     function syncTheme() {
       if (root.dataset.theme) doc.documentElement.dataset.theme = root.dataset.theme;

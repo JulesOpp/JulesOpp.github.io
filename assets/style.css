@@ -209,7 +209,8 @@ main { flex: 1; padding: 2.5rem 0 3rem; }
 .prose .gallery figure { margin: 0; }
 .prose li { margin: 0.25rem 0; }
 .prose a { overflow-wrap: anywhere; }
-.embed { width: min(92.5rem, 100vw - 2rem); margin: 1.5rem 0 1.5rem 50%; transform: translateX(-50%); }
+body:has(.embed) { overflow-x: clip; }
+.embed { width: calc(100vw - 2rem); margin: 1.5rem 0 1.5rem 50%; transform: translateX(-50%); }
 .embed iframe { display: block; width: 100%; height: 90vh; border: 1px solid var(--line); border-radius: 6px; }
 
 code, pre { font-family: var(--mono); font-size: 0.86em; }
