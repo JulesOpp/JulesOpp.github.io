@@ -215,7 +215,7 @@ const Q_LABELS = {
   k1: "lamellar superstructure", k8: "8-fold (metastable only)",
   custom: "custom",
 };
-const DEFAULTS = { eps: 0.005, c: 10, qName: "k12", qCustom: 1.9, T: 0,
+const DEFAULTS = { eps: 0.005, c: 10, qName: "k12", qCustom: 1.9, T: 0.005,
                    dt: 0.5, mode: "overdamped", friction: 1 };
 
 const clamp = (v, lo, hi) => Math.min(Math.max(+v, lo), hi);

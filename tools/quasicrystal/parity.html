@@ -119,6 +119,7 @@ async function main() {
 
   {
     const sim = new QC.QCSim(gpu, 128);
+    sim.setParams({ T: 0 });           // Python's reference run is at T = 0
     sim.setField(await ref("rho0_qc"));
     sim.step(100);
     const want = await ref("rho100_qc"), e = maxAbs(sim.readField(), want);
@@ -256,7 +257,7 @@ async function main() {
     sim.dispose();
   }
 
-  // Behaviour at the defaults (n = 512): noise grows 12 peaks on each
+  // Behaviour at the page defaults (n = 512, bath T = 0.005): noise grows 12 peaks on each
   // ring, and a held brush melts a patch that then regrows.
   {
     const n = 512, sim = new QC.QCSim(gpu, n, 6, 1);
