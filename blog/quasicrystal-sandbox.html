@@ -12,7 +12,7 @@
 /* The app breaks out of the 52rem text column: field on the left, a
    column with the phase diagram above the controls on the right,
    stacked below 900 px. */
-.qc { display: grid; grid-template-columns: minmax(0, 1fr) 22rem; gap: 1.25rem;
+.qc { display: grid; grid-template-columns: minmax(0, 1fr) 23.5rem; gap: 1.25rem;
   max-width: 88rem; margin: 0.5rem auto 1.5rem; padding: 0 1rem; align-items: start; }
 .qc-main { display: grid; gap: 0.5rem; justify-items: center; min-width: 0; }
 .qc-stage { position: relative; width: min(100%, calc(100vh - 6.5rem)); min-width: 0;
@@ -165,40 +165,6 @@
     ∂ρ/∂t = −δF/δρ + √(2T(<b>r</b>)) η, and the brush paints the local
     temperature T(<b>r</b>). The stiff gradient term is handled implicitly in
     Fourier space, by an FFT that runs in WebGL.</p>
-
-    <h2>Things to try</h2>
-    <ul>
-      <li><b>Melt and regrow.</b> At the defaults, hold the brush still for a
-      second, then let go and watch the patch regrow.</li>
-      <li><b>Hexagons against the quasicrystal.</b> Choose Reset ▸ half and
-      half. Inside the dodecagonal region of the diagram the quasicrystal eats
-      the hexagonal half. Click into the hexagonal region and the fight goes the
-      other way.</li>
-      <li><b>Go 10-fold.</b> Set q to 10-fold (decagonal), click inside the
-      decagonal region (around ε = −0.05, c = 10–15), then choose Reset ▸
-      quasicrystal seed, on a 512² grid or larger. It will not grow from noise
-      there, because for ε &lt; 0 the liquid is stable too, so it has to be
-      seeded.</li>
-      <li><b>Hysteresis.</b> Cross a boundary slowly and the old phase often
-      survives, because it is metastable. A brush stroke is enough to tip it
-      over.</li>
-      <li><b>Fourier view.</b> It shows |ρ(<b>k</b>)|², where the 12 (or 10)
-      peaks on each ring are easy to count.</li>
-    </ul>
-
-    <h2>About the phase diagram</h2>
-    <p>The diagrams use the two-ring approximation of Savitz, Babadi and
-    Lifshitz, computed in advance for each preset q. (A custom q has no
-    diagram.) Treat them as a guide: the simulation runs at finite c, in a
-    periodic box, with noise, so boundaries shift and metastable phases
-    persist.</p>
-    <p>One departure from Table 1 of the review: there, every peak on a ring
-    has the same amplitude. Here each ± pair of peaks gets its own amplitude,
-    and that finds a cheaper <b>low-symmetry crystal</b> that keeps only some
-    of the peaks. For the decagonal q it takes over from the quasicrystal above
-    ε ≈ −0.024, and the simulation agrees: a decagonal seed at ε = 0 relaxes
-    into it. For the dodecagonal q it appears above ε ≈ 0.012, so the default
-    point stays dodecagonal.</p>
 
     <h2>Credits</h2>
     <p>This recreates Sam Savitz's interactive GPU demo of the model (S. Savitz
@@ -1472,7 +1438,8 @@ function syncRow(key, force) {
 
 const qSel = $("qc-q");
 for (const [k, label] of Object.entries(QC.Q_LABELS))
-  qSel.add(new Option(label, k));
+  qSel.add(new Option(k in QC.Q_PRESETS
+    ? `${label}, q = ${+QC.Q_PRESETS[k].toFixed(3)}` : label, k));
 const cmapSel = $("qc-cmap");
 for (const name of Object.keys(QCDATA.lut)) cmapSel.add(new Option(name, name));
 qSel.addEventListener("change", () => state.set({ qName: qSel.value }));
