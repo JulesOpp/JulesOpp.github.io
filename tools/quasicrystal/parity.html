@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>QC Sandbox parity tests</title>
+<style>
+  body { font: 13px ui-monospace, Menlo, monospace; margin: 16px; }
+  .pass { color: #0a7a2f; } .fail { color: #c01818; font-weight: bold; }
+</style>
+<h1>QC Sandbox: JS port vs the Python core</h1>
+<p>Reference fields come from <code>export_reference.py</code>. The code
+under test is the post's own <code>qc-data</code> and <code>qc-core</code>
+scripts, fetched from the post.</p>
+<pre id="log"></pre>
+<script>
+"use strict";
+const logEl = document.getElementById("log");
+const results = [];
+function log(s, cls) {
+  const span = document.createElement("span");
+  if (cls) span.className = cls;
+  span.textContent = s + "\n";
+  logEl.appendChild(span);
+}
+function check(name, ok, detail) {
+  results.push({ name, ok, detail });
+  log(`${ok ? "PASS" : "FAIL"}  ${name}  ${detail}`, ok ? "pass" : "fail");
+}
+const maxAbs = (a, b) => {
+  let m = 0;
+  for (let i = 0; i < a.length; i++) m = Math.max(m, Math.abs(a[i] - b[i]));
+  return m;
+};
+
+async function loadCore() {
+  const html = await (await fetch("../../blog/quasicrystal-sandbox.html",
+                                  { cache: "no-store" })).text();
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const src = ["qc-data", "qc-core"].map((id) =>
+    doc.getElementById(id).textContent).join("\n;\n");
+  return new Function(src + "\nreturn { QC, QCDATA };")();
+}
+let manifest;
+async function ref(name) {
+  const m = manifest[name];
+  const buf = await (await fetch("ref/" + m.file, { cache: "no-store" })).arrayBuffer();
+  return m.dtype === "uint8" ? new Uint8Array(buf) : new Float32Array(buf);
+}
+
+async function main() {
+  const { QC, QCDATA } = await loadCore();
+  window.QC = QC; window.QCDATA = QCDATA;
+  manifest = await (await fetch("ref/manifest.json", { cache: "no-store" })).json();
+  const canvas = document.createElement("canvas");
+  const probe = QC.probeWebGL(canvas);
+  check("WebGL2 with float render targets", probe.ok, probe.reason || "");
+  if (!probe.ok) return;
+  const gpu = new QC.GPU(probe.gl);
+  window.gpu = gpu;
+
+  // FFT on its own against numpy.fft.fft2.
+  {
+    const x = await ref("fft_in"), want = await ref("fft_out");
+    const sim = new QC.QCSim(gpu, 128);
+    sim.setField(x);
+    const got = gpu.read(sim.t.rhoK, 1, true);
+    let scale = 0;
+    for (const v of want) scale = Math.max(scale, Math.abs(v));
+    const e = maxAbs(got, want) / scale;
+    check("GPU FFT matches numpy fft2 (n=128)", e <= 1e-5,
+          `max rel err ${e.toExponential(2)}`);
+    sim.dispose();
+  }
+
+  // 100 steps at T = 0 from the same start.
+  for (const mode of ["overdamped", "inertial"]) {
+    const m = manifest[`rho100_${mode}`];
+    const sim = new QC.QCSim(gpu, 128, Math.PI / m.dx);
+    sim.setParams({ eps: m.params.eps, c: m.params.c,
+      qName: m.params.q_name, T: 0, dt: m.params.dt, mode,
+      friction: m.params.friction });
+    sim.setField(await ref(`rho0_${mode}`));
+    sim.step(100);
+    const got = sim.readField(), want = await ref(`rho100_${mode}`);
+    const e = maxAbs(got, want);
+    let amp = 0, drift = 0;
+    const start = await ref(`rho0_${mode}`);
+    for (let i = 0; i < want.length; i++) {
+      amp = Math.max(amp, Math.abs(want[i]));
+      drift = Math.max(drift, Math.abs(want[i] - start[i]));
+    }
+    check(`100 steps ${mode} match Python (n=128, k12 defaults)`, e <= 1e-4,
+          `max |drho| ${e.toExponential(2)} (field max ${amp.toFixed(3)}, change over run ${drift.toFixed(3)})`);
+    sim.dispose();
+  }
+
+  {
+    const sim = new QC.QCSim(gpu, 128);
+    sim.setField(await ref("rho0_qc"));
+    sim.step(100);
+    const want = await ref("rho100_qc"), e = maxAbs(sim.readField(), want);
+    let amp = 0;
+    for (const v of want) amp = Math.max(amp, Math.abs(v));
+    check("100 steps from a quasicrystal seed match Python", e <= 1e-4,
+          `max |drho| ${e.toExponential(2)} (field max ${amp.toFixed(3)})`);
+    sim.dispose();
+  }
+
+  // The embedded phase diagrams decode to the Python labels.
+  for (const name of Object.keys(QC.Q_PRESETS)) {
+    const d = QCDATA.diagrams[name], want = await ref(`labels_${name}`);
+    const got = QC.decodeLabels(d);
+    const same = got.length === want.length && got.every((v, i) => v === want[i])
+      && JSON.stringify(d.names) === JSON.stringify(manifest[`labels_${name}`].names);
+    check(`embedded ${name} diagram equals Python's`, same, d.names.join(", "));
+  }
+
+  // Hash RNG: xi ~ N(0, 1).  Read the noise term itself with eps = 0
+  // on a flat field.
+  {
+    const n = 512, sim = new QC.QCSim(gpu, n);
+    sim.setParams({ eps: 0, T: 0.01 });
+    sim.setField(new Float32Array(n * n));
+    const p = sim.params, amp = Math.sqrt(2 / p.dt) / sim.dx;
+    gpu.run(gpu.progs.nonlin || (sim.step(0), gpu.progs.nonlin), sim.t.N, {
+      u_rho: sim.t.rho, u_heat: sim.t.heat, u_eps: 0, u_T: p.T, u_amp: amp,
+      u_noisy: 1, u_step: 12345, u_seed: 0 });
+    const xi = gpu.read(sim.t.N).map((v) => v / (amp * Math.sqrt(p.T)));
+    let mean = 0, v2 = 0;
+    for (const v of xi) mean += v;
+    mean /= xi.length;
+    for (const v of xi) v2 += (v - mean) ** 2;
+    v2 /= xi.length;
+    check("hash RNG gives N(0,1) (512^2 cells)",
+          Math.abs(mean) < 0.01 && Math.abs(v2 - 1) < 0.01,
+          `mean ${mean.toFixed(4)}, var ${v2.toFixed(4)}`);
+
+    const want = manifest.noise_step.var;
+    sim.setField(new Float32Array(n * n));
+    sim.step(1);
+    const f = sim.readField();
+    let m2 = 0, s2 = 0;
+    for (const v of f) m2 += v;
+    m2 /= f.length;
+    for (const v of f) s2 += (v - m2) ** 2;
+    s2 /= f.length;
+    check("one noisy step has Python's variance (T=0.01, n=512)",
+          Math.abs(s2 / want - 1) < 0.03,
+          `JS ${s2.toExponential(3)}, Python ${want.toExponential(3)}`);
+    sim.dispose();
+  }
+
+  // Every slider extreme, with full bath T and a full-strength brush,
+  // stays finite and inside the clip.
+  {
+    const n = 128, sim = new QC.QCSim(gpu, n);
+    let worst = "", ok = true;
+    for (const eps of QC.EPS_RANGE) for (const lc of QC.LOGC_RANGE)
+      for (const dt of QC.DT_RANGE) for (const mode of ["overdamped", "inertial"])
+        for (const friction of QC.FRICTION_RANGE) {
+          if (mode === "overdamped" && friction !== 1 && friction !== QC.FRICTION_RANGE[0]) continue;
+          sim.setParams({ eps, c: 10 ** lc, dt, mode, friction, T: QC.T_RANGE[1] });
+          sim.setField(QC.randomField(n, 3));
+          for (let s = 0; s < 200; s++) {
+            if (s % 10 === 0) sim.addHeat(64, 64, 20, 24);
+            sim.step(1);
+          }
+          const f = sim.readField();
+          let bad = false;
+          for (const v of f) if (!Number.isFinite(v) || Math.abs(v) > 3) bad = true;
+          if (bad) { ok = false; worst += ` eps=${eps} c=${10 ** lc} dt=${dt} ${mode} g=${friction};`; }
+        }
+    check("every slider extreme stays finite and within +-3 (200 steps)", ok,
+          ok ? "" : worst);
+    sim.dispose();
+  }
+}
+main().catch((e) => { log("ERROR " + e.stack, "fail"); console.error(e); })
+  .finally(() => { window.done = results; log("done"); });
+</script>
+</html>
