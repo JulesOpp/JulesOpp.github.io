@@ -146,21 +146,23 @@
   <div class="wrap">
     <article class="prose">
     <h2>The model</h2>
-    <p>Soft-matter systems such as dendrimers and block copolymer micelles can
-    form quasicrystals with 12-fold or 10-fold rotational symmetry. The
-    Lifshitz–Petrich model describes them with a scalar density field
-    ρ(<b>r</b>) and the free energy</p>
+    <p>The Lifshitz–Petrich model describes a soft-matter quasicrystal with a
+    scalar density field ρ(<b>r</b>) and the free energy</p>
     <p class="eq">F = ∫ { <sup>c</sup>⁄<sub>2</sub> [(∇² + 1)(∇² + q²) ρ]² − <sup>ε</sup>⁄<sub>2</sub> ρ² − <sup>1</sup>⁄<sub>3</sub> ρ³ + <sup>1</sup>⁄<sub>4</sub> ρ⁴ } d<b>r</b></p>
-    <p>The gradient term selects two length scales, with wavenumbers 1 and q,
-    and the cubic term favours triads of wavevectors that sum to zero. For
-    q = 2 cos(π/12) these triads have 12-fold symmetry, which stabilises the
-    dodecagonal quasicrystal. ε acts as a reduced temperature, and c sets the
-    penalty for density waves away from the two wavenumbers.</p>
-    <p>The field follows overdamped Langevin dynamics,</p>
+    <p>where ε acts as a reduced temperature and c sets the strength of the
+    gradient term, which favours wavenumbers 1 and q. The field follows
+    overdamped Langevin dynamics,</p>
     <p class="eq">∂ρ/∂t = −δF/δρ + √(2T(<b>r</b>)) η,</p>
-    <p>where the brush sets the local temperature T(<b>r</b>). The gradient
-    term is integrated semi-implicitly in Fourier space, with the FFTs done on
-    the GPU in WebGL.</p>
+    <p>where η is white noise and the brush sets the local temperature
+    T(<b>r</b>).</p>
+    <p>The equation is solved pseudo-spectrally on a periodic grid. Each time
+    step treats the stiff gradient term, together with a linear stabiliser
+    S = 2, implicitly in Fourier space, and the nonlinear and noise terms
+    explicitly:</p>
+    <p class="eq">ρ̂<sub><b>k</b></sub>(t + Δt) = [ (1 + SΔt) ρ̂<sub><b>k</b></sub>(t) + Δt N̂<sub><b>k</b></sub> ] / [ 1 + Δt (c P(k) + S) ]</p>
+    <p>with P(k) = [(k² − 1)(k² − q²)]² and N = ερ + ρ² − ρ³ plus the noise.
+    The new field is clipped to |ρ| ≤ 3, which keeps every slider setting
+    stable. The FFTs run on the GPU in WebGL.</p>
 
     <h2>Credits</h2>
     <p>This recreates Sam Savitz's interactive GPU demo of the model (S. Savitz
