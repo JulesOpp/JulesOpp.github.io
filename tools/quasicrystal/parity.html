@@ -31,6 +31,30 @@ const maxAbs = (a, b) => {
   return m;
 };
 
+// Angles (degrees) of the local maxima of |rho_k|^2 within 0.08 of
+// the ring |k| = kr, keeping those above 15 % of the ring's maximum.
+function ringPeaks(QC, sim, kr) {
+  const n = sim.n, re = Float64Array.from(sim.readField()), im = new Float64Array(n * n);
+  QC.fft2cpu(re, im, n, false);
+  const P = re.map((v, i) => v * v + im[i] * im[i]);
+  P[0] = 0;
+  const dk = 2 * Math.PI / (n * sim.dx), fk = (i) => (i <= n / 2 ? i : i - n);
+  const cells = [];
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++)
+    if (Math.abs(Math.hypot(fk(x) * dk, fk(y) * dk) - kr) <= 0.08) cells.push([x, y]);
+  const top = Math.max(...cells.map(([x, y]) => P[y * n + x]));
+  const out = [];
+  for (const [x, y] of cells) {
+    const v = P[y * n + x];
+    if (v < 0.15 * top) continue;
+    let max = true;
+    for (let dy = -2; dy <= 2 && max; dy++) for (let dx = -2; dx <= 2; dx++)
+      if ((dx || dy) && P[((y + dy + n) % n) * n + (x + dx + n) % n] > v) { max = false; break; }
+    if (max) out.push(Math.round(Math.atan2(fk(y), fk(x)) * 180 / Math.PI));
+  }
+  return out.sort((a, b) => a - b);
+}
+
 async function loadCore() {
   const html = await (await fetch("../../blog/quasicrystal-sandbox.html",
                                   { cache: "no-store" })).text();
@@ -229,6 +253,31 @@ async function main() {
     check("one noisy step has Python's variance (T=0.01, n=512)",
           Math.abs(s2 / want - 1) < 0.03,
           `JS ${s2.toExponential(3)}, Python ${want.toExponential(3)}`);
+    sim.dispose();
+  }
+
+  // Behaviour at the defaults (n = 512): noise grows 12 peaks on each
+  // ring, and a held brush melts a patch that then regrows.
+  {
+    const n = 512, sim = new QC.QCSim(gpu, n, 6, 1);
+    sim.setField(QC.randomField(n, 7));
+    for (let i = 0; i < 60; i++) sim.step(50);
+    const inner = ringPeaks(QC, sim, 1), outer = ringPeaks(QC, sim, QC.Q_PRESETS.k12);
+    const even = (a) => a.length === 12 && a.every((v, i) => i === 0 || Math.abs(v - a[i - 1] - 30) <= 2);
+    check("random start grows a 12-fold pattern (3000 steps)", even(inner) && even(outer),
+          `k=1: ${inner.join(" ")}; k=q: ${outer.join(" ")}`);
+    const before = sim.readField();
+    const win = (f, x0, y0) => { const o = []; for (let y = y0; y < y0 + 40; y++) for (let x = x0; x < x0 + 40; x++) o.push(f[y * n + x]); return o; };
+    const corr = (a, b) => { const m = (v) => v.reduce((s, x) => s + x, 0) / v.length; const ma = m(a), mb = m(b); let sab = 0, saa = 0, sbb = 0; a.forEach((v, i) => { const x = v - ma, y = b[i] - mb; sab += x * y; saa += x * x; sbb += y * y; }); return sab / Math.sqrt(saa * sbb); };
+    // The frame loop at 60 fps, 8 steps a frame, default brush held 1 s.
+    for (let fr = 0; fr < 60; fr++) { sim.addHeat(256, 256, 5 * (20 / 60), 24); sim.cool(Math.exp(-1 / 120)); sim.step(8); }
+    const melted = corr(win(sim.readField(), 236, 236), win(before, 236, 236));
+    const far = corr(win(sim.readField(), 20, 20), win(before, 20, 20));
+    for (let fr = 0; fr < 600; fr++) { sim.cool(Math.exp(-1 / 120)); sim.step(8); }
+    const regrown = corr(win(sim.readField(), 236, 236), win(before, 236, 236));
+    check("a held brush melts locally and the patch regrows",
+          melted < 0.5 && far > 0.95 && regrown > 0.8,
+          `local corr ${melted.toFixed(2)} after 1 s, far ${far.toFixed(2)}, ${regrown.toFixed(2)} 10 s later`);
     sim.dispose();
   }
 
