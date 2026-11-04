@@ -146,21 +146,21 @@
   <div class="wrap">
     <article class="prose">
     <h2>The model</h2>
-    <p>Some soft materials, such as dendrimers and block copolymer micelles,
-    form quasicrystals: ordered patterns with 12-fold or 10-fold symmetry and
-    no repeating unit cell. The Lifshitz–Petrich model explains them with a
-    density field ρ(<b>r</b>) whose free energy favours two wavelengths at
-    once:</p>
+    <p>Soft-matter systems such as dendrimers and block copolymer micelles can
+    form quasicrystals with 12-fold or 10-fold rotational symmetry. The
+    Lifshitz–Petrich model describes them with a scalar density field
+    ρ(<b>r</b>) and the free energy</p>
     <p class="eq">F = ∫ { <sup>c</sup>⁄<sub>2</sub> [(∇² + 1)(∇² + q²) ρ]² − <sup>ε</sup>⁄<sub>2</sub> ρ² − <sup>1</sup>⁄<sub>3</sub> ρ³ + <sup>1</sup>⁄<sub>4</sub> ρ⁴ } d<b>r</b></p>
-    <p>The gradient term rewards waves with wavenumbers 1 and q. The cubic term
-    rewards triangles of wavevectors that add up to zero. With
-    q = 2 cos(π/12), two short wavevectors 30° apart add up to a long one, so
-    the 12-fold quasicrystal gets the triangles it needs. ε says how far below
-    the melting point you are, and c how strictly the two length scales are
-    enforced. The field slides downhill with thermal noise,
-    ∂ρ/∂t = −δF/δρ + √(2T(<b>r</b>)) η, and the brush paints the local
-    temperature T(<b>r</b>). The stiff gradient term is handled implicitly in
-    Fourier space, by an FFT that runs in WebGL.</p>
+    <p>The gradient term selects two length scales, with wavenumbers 1 and q,
+    and the cubic term favours triads of wavevectors that sum to zero. For
+    q = 2 cos(π/12) these triads have 12-fold symmetry, which stabilises the
+    dodecagonal quasicrystal. ε acts as a reduced temperature, and c sets the
+    penalty for density waves away from the two wavenumbers.</p>
+    <p>The field follows overdamped Langevin dynamics,</p>
+    <p class="eq">∂ρ/∂t = −δF/δρ + √(2T(<b>r</b>)) η,</p>
+    <p>where the brush sets the local temperature T(<b>r</b>). The gradient
+    term is integrated semi-implicitly in Fourier space, with the FFTs done on
+    the GPU in WebGL.</p>
 
     <h2>Credits</h2>
     <p>This recreates Sam Savitz's interactive GPU demo of the model (S. Savitz
