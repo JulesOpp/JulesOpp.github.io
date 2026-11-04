@@ -114,6 +114,29 @@ async function main() {
     check(`embedded ${name} diagram equals Python's`, same, d.names.join(", "));
   }
 
+  // Seeds: grid snapping, rotation search, amplitudes, half window.
+  for (const [name, m] of Object.entries(manifest)) {
+    if (!name.startsWith("seed_")) continue;
+    const got = QC.makeSeed(m.kind, { n: m.n, dx: m.dx, eps: m.eps,
+                                      qName: m.q_name, q: m.q });
+    const e = maxAbs(got, await ref(name));
+    check(`seed ${m.kind} ${m.q_name} n=${m.n} matches Python`, e <= 1e-5,
+          `max err ${e.toExponential(2)}`);
+  }
+
+  // Band-limited resampling for grid and zoom changes.
+  {
+    const a = await ref("resample_in");
+    const cases = [["resample_up", QC.fourierResample(a, 128, 256)],
+                   ["resample_down", QC.fourierResample(a, 128, 64)],
+                   ["resample_odd", QC.fourierResample(QC.wrapWindow(a, 128, 85), 85, 128)]];
+    for (const [name, got] of cases) {
+      const e = maxAbs(got, await ref(name));
+      check(`${name} matches sim._fourier_resample`, e <= 1e-5,
+            `max err ${e.toExponential(2)}`);
+    }
+  }
+
   // Hash RNG: xi ~ N(0, 1).  Read the noise term itself with eps = 0
   // on a flat field.
   {

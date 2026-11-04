@@ -674,16 +674,29 @@ function snap(g, ks) {
 }
 // The ring rotation whose snapped wavevectors sit closest to their
 // rings: an unlucky angle turns a seed into the wrong phase.
+// Mirror-image rotations tie up to the last bit, so the arithmetic
+// copies NumPy's (norm then square, pairwise sum, linspace steps):
+// a tie broken the other way gives a different, mirrored seed.
+function npSum(a) {
+  const n = a.length;
+  if (n < 8) { let r = 0; for (const v of a) r += v; return r; }
+  const r = a.slice(0, 8);
+  let i = 8;
+  for (; i < n - (n % 8); i += 8) for (let j = 0; j < 8; j++) r[j] += a[i + j];
+  let res = ((r[0] + r[1]) + (r[2] + r[3])) + ((r[4] + r[5]) + (r[6] + r[7]));
+  for (; i < n; i++) res += a[i];
+  return res;
+}
 function bestRotation(build, N, radii) {
+  const step = (2 * Math.PI / N) / 400;
   let best = 0, bestMiss = Infinity;
   for (let i = 0; i < 400; i++) {
-    const th = i * (2 * Math.PI / N) / 400;
-    const ks = build(th);
-    let miss = 0;
-    for (let j = 0; j < ks.length; j++) {
-      const d = ks[j][0] ** 2 + ks[j][1] ** 2 - radii[j] ** 2;
-      miss += d * d;
-    }
+    const th = i * step;
+    const miss = npSum(build(th).map(([kx, ky], j) => {
+      const k = Math.sqrt(kx * kx + ky * ky);
+      const d = k * k - radii[j] * radii[j];
+      return d * d;
+    }));
     if (miss < bestMiss) { bestMiss = miss; best = th; }
   }
   return best;
