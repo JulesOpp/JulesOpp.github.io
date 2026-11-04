@@ -136,6 +136,8 @@
             <select id="qc-grid"><option value="256">256²</option><option value="512">512²</option><option value="1024">1024²</option></select></div>
           <div class="qc-row" data-key="zoom"><label>zoom</label></div>
           <div class="qc-row"><label for="qc-cmap">colours</label><select id="qc-cmap"></select></div>
+          <div class="qc-row"><label for="qc-fps">frame rate</label>
+            <select id="qc-fps"><option value="0">as fast as the screen</option><option value="60">60 fps</option><option value="30">30 fps</option><option value="15">15 fps</option></select></div>
           <div class="qc-row check"><label for="qc-auto">auto range</label><input type="checkbox" id="qc-auto"></div>
           <div class="qc-row" data-key="fixedRange"><label>range ±</label></div>
         </fieldset>
@@ -1098,10 +1100,17 @@ class QCView {
   // Collect finished readbacks.  Call before queuing the frame's
   // steps: Chrome serves getBufferSubData behind everything already
   // queued, which cost 45 ms a frame when polled after them.
+  // Returns true when a result changed what draw() would show, so a
+  // paused page knows to redraw.
   poll() {
     this.framesSinceRange++;
+    let changed = false;
     const f = this.fourierRead.poll();
-    if (f) this.fmax = f.reduce((a, b) => Math.max(a, b), 0) || 1;
+    if (f) {
+      const fmax = f.reduce((a, b) => Math.max(a, b), 0) || 1;
+      changed = Math.abs(fmax - this.fmax) > 1e-6 * fmax;
+      this.fmax = fmax;
+    }
     const got = this.rangeRead.poll();
     if (got) {
       for (let i = 0; i < got.length; i++) got[i] = Math.abs(got[i]);
@@ -1109,9 +1118,13 @@ class QCView {
       // colormaps.AutoRange smooths by 0.1 per frame; a readback
       // lands every few frames, so smooth by the same per frame.
       const a = 1 - Math.pow(0.9, this.framesSinceRange);
-      this.hi = this.hi === null ? m : this.hi + a * (m - this.hi);
+      const old = this.hi;
+      this.hi = old === null ? m : old + a * (m - old);
+      // Below half a percent the colours no longer visibly move.
+      changed ||= old === null || Math.abs(this.hi - old) > 0.005 * this.hi;
       this.framesSinceRange = 0;
     }
+    return changed;
   }
   updateRange() {
     if (!this.rangeRead.busy && (this.hi === null || this.framesSinceRange >= 4))
@@ -1217,7 +1230,7 @@ const state = {
   // low-symmetry crystal instead of the quasicrystal.
   n: 512, cmap: "red-white-blue", fourier: false,
   autoRange: true, fixedRange: 1, brushHeat: 5, brushSize: 24,
-  cooling: 2, zoom: 6, running: true,
+  cooling: 2, zoom: 6, running: true, fpsCap: 0,
   subs: [],
   set(changes) {
     const p = QC.clampParams({ ...this, ...changes });
@@ -1256,6 +1269,7 @@ function startGPU() {
   sim.setParams(state.params());
   view = new QC.QCView(gpu, sim, QCDATA.lut);
   msg.hidden = true;
+  dirty = true;
   // Time a few steps once (a tiny read waits for the GPU to finish):
   // a GPU that needs more than 6 ms a step at 512^2 cannot animate it,
   // so start it at 256^2.  Frame times are no guide here, because a
@@ -1309,12 +1323,16 @@ overlay.addEventListener("pointerdown", (e) => {
 });
 overlay.addEventListener("pointermove", (e) => {
   mouse = [e.clientX, e.clientY];
+  overlayDirty = true;
   if (pointerSign) paintAt(e);
 });
 const release = () => { pointerSign = 0; held = null; };
 overlay.addEventListener("pointerup", release);
 overlay.addEventListener("pointercancel", release);
-overlay.addEventListener("pointerleave", () => { if (!pointerSign) mouse = null; });
+overlay.addEventListener("pointerleave", () => {
+  if (!pointerSign) mouse = null;
+  overlayDirty = true;
+});
 
 function drawOverlay() {
   const ctx = overlay.getContext("2d"), dpr = devicePixelRatio || 1;
@@ -1337,6 +1355,9 @@ function drawOverlay() {
 
 // --- frame loop ------------------------------------------------------------
 let last = null, fps = 0, stepsPerFrame = 2;
+// dirty: the field picture must be redrawn even though the run is
+// paused (a reset, a step, a control, a resize).
+let dirty = true, overlayDirty = true, owedCooling = 0;
 let ceiling = 64, ceilingUntil = 0, intervals = [];
 // Steps per frame follow the GPU: the browser only paces
 // requestAnimationFrame to what the GPU finishes, so a frame interval
@@ -1347,11 +1368,15 @@ function adapt(dt, now) {
   const mean = intervals.reduce((a, b) => a + b, 0) / intervals.length;
   intervals = [];
   if (now > ceilingUntil) ceiling = 64;
-  if (mean > 22 && stepsPerFrame > 1) {
+  // Under a cap the frames are slow on purpose: judge them against the
+  // cap, and never add steps, or the GPU would fill up again with more
+  // steps per frame.
+  const target = state.fpsCap ? Math.max(1000 / state.fpsCap, 16.7) : 16.7;
+  if (mean > target * 1.3 && stepsPerFrame > 1) {
     ceiling = stepsPerFrame - 1;
     ceilingUntil = now + 5000;
     stepsPerFrame = Math.max(1, Math.floor(stepsPerFrame * 0.75));
-  } else if (mean < 18.5 && stepsPerFrame < ceiling) {
+  } else if (!state.fpsCap && mean < 18.5 && stepsPerFrame < ceiling) {
     stepsPerFrame++;
   }
 }
@@ -1359,11 +1384,27 @@ function adapt(dt, now) {
 function frame(now) {
   requestAnimationFrame(frame);
   if (!sim) return;
+  // A frame-rate cap skips whole frames (steps included), so the GPU
+  // does proportionally less work.  The 1.5 ms slack keeps a 30 fps
+  // cap on a 60 Hz screen from falling to 20.
+  if (state.fpsCap && last !== null && now - last < 1000 / state.fpsCap - 1.5) return;
   const dtMs = last === null ? 0 : now - last;
   last = now;
   const elapsed = Math.min(dtMs / 1000, MAX_ELAPSED);
-  resizeCanvas();
-  view.poll();
+  if (resizeCanvas()) dirty = true;
+  if (view.poll()) dirty = true;
+  if (!state.running && !dirty && !paints.length && !held) {
+    // Paused and nothing changed: no GPU work at all.  Cooling is a
+    // pure decay, so it is owed here and paid in one pass later.
+    owedCooling += elapsed;
+    if (overlayDirty) { drawOverlay(); overlayDirty = false; }
+    status();
+    return;
+  }
+  if (owedCooling) {
+    sim.cool(Math.exp(-owedCooling / state.cooling));
+    owedCooling = 0;
+  }
   if (!paints.length && held && elapsed) {
     const [x, y, s] = held;
     sim.addHeat(x, y, s * state.brushHeat * Math.min(1, elapsed * HOLD_RATE),
@@ -1373,10 +1414,15 @@ function frame(now) {
   paints.length = 0;
   if (elapsed) sim.cool(Math.exp(-elapsed / state.cooling));
   if (state.running) sim.step(stepsPerFrame);
-  view.draw({ cmap: state.cmap, fourier: state.fourier,
-              autoRange: state.autoRange, fixedRange: state.fixedRange },
-            null, [0, 0, glCanvas.width, glCanvas.height]);
+  // Painting while paused changes only the heat, which is not drawn.
+  if (state.running || dirty) {
+    view.draw({ cmap: state.cmap, fourier: state.fourier,
+                autoRange: state.autoRange, fixedRange: state.fixedRange },
+              null, [0, 0, glCanvas.width, glCanvas.height]);
+    dirty = false;
+  }
   drawOverlay();
+  overlayDirty = false;
   if (dtMs) {
     fps += 0.1 * (1000 / dtMs - fps);
     if (state.running && !document.hidden) adapt(dtMs, now);
@@ -1387,13 +1433,17 @@ let statusTimer = 0;
 function status() {
   if (performance.now() - statusTimer < 250) return;
   statusTimer = performance.now();
-  $("qc-status").textContent = `${state.n}² · ${fps.toFixed(0)} fps · ` +
-    `${state.running ? stepsPerFrame : 0} steps/frame · t = ${sim.time.toFixed(0)}`;
+  $("qc-status").textContent = (state.running
+    ? `${state.n}² · ${fps.toFixed(0)} fps · ${stepsPerFrame} steps/frame`
+    : `${state.n}² · paused`) + ` · t = ${sim.time.toFixed(0)}`;
 }
+// True when the canvas changed size (which also clears it).
 function resizeCanvas() {
   const dpr = devicePixelRatio || 1;
   const w = Math.min(2048, Math.round(glCanvas.clientWidth * dpr));
-  if (w && glCanvas.width !== w) { glCanvas.width = w; glCanvas.height = w; }
+  if (!w || glCanvas.width === w) return false;
+  glCanvas.width = w; glCanvas.height = w;
+  return true;
 }
 
 // --- controls --------------------------------------------------------------
@@ -1433,10 +1483,16 @@ qSel.addEventListener("change", () => state.set({ qName: qSel.value }));
 $("qc-mode").addEventListener("change", (e) => state.set({ mode: e.target.value }));
 $("qc-grid").addEventListener("change", (e) => state.set({ n: +e.target.value }));
 cmapSel.addEventListener("change", () => state.set({ cmap: cmapSel.value }));
+$("qc-fps").addEventListener("change", (e) => {
+  state.set({ fpsCap: +e.target.value });
+  intervals = [];
+});
 $("qc-auto").addEventListener("change", (e) => state.set({ autoRange: e.target.checked }));
 $("qc-run").addEventListener("click", () => state.set({ running: !state.running }));
 $("qc-fourier").addEventListener("click", () => state.set({ fourier: !state.fourier }));
-$("qc-step").addEventListener("click", () => { if (sim) sim.step(1); });
+$("qc-step").addEventListener("click", () => {
+  if (sim) { sim.step(1); dirty = true; }
+});
 $("qc-reset").addEventListener("change", (e) => {
   reset(e.target.value);
   e.target.selectedIndex = 0;
@@ -1459,6 +1515,7 @@ function reset(kind) {
   if (!sim) return;
   sim.setField(QC.makeSeed(kind, QC.seedGeometry(sim), (Math.random() * 2 ** 31) >>> 0));
   view.resetRange();
+  dirty = true;
 }
 
 function saveImage() {
@@ -1487,6 +1544,7 @@ function saveImage() {
 
 let zoomTimer = 0;
 state.subs.push((changed) => {
+  dirty = overlayDirty = true;
   if (sim) {
     if (changed.some((k) => PARAM_KEYS.includes(k))) sim.setParams(state.params());
     if (changed.includes("n") && state.n !== sim.n) {
@@ -1516,6 +1574,7 @@ function render(changed) {
   $("qc-mode").value = state.mode;
   $("qc-grid").value = String(state.n);
   cmapSel.value = state.cmap;
+  $("qc-fps").value = String(state.fpsCap);
   $("qc-auto").checked = state.autoRange;
   rows.qCustom.row.hidden = state.qName !== "custom";
   rows.friction.row.hidden = state.mode !== "inertial";
