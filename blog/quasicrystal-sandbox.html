@@ -155,14 +155,6 @@
     <p class="eq">∂ρ/∂t = −δF/δρ + √(2T(<b>r</b>)) η,</p>
     <p>where η is white noise and the brush sets the local temperature
     T(<b>r</b>).</p>
-    <p>The equation is solved pseudo-spectrally on a periodic grid. Each time
-    step treats the stiff gradient term, together with a linear stabiliser
-    S = 2, implicitly in Fourier space, and the nonlinear and noise terms
-    explicitly:</p>
-    <p class="eq">ρ̂<sub><b>k</b></sub>(t + Δt) = [ (1 + SΔt) ρ̂<sub><b>k</b></sub>(t) + Δt N̂<sub><b>k</b></sub> ] / [ 1 + Δt (c P(k) + S) ]</p>
-    <p>with P(k) = [(k² − 1)(k² − q²)]² and N = ερ + ρ² − ρ³ plus the noise.
-    The new field is clipped to |ρ| ≤ 3, which keeps every slider setting
-    stable. The FFTs run on the GPU in WebGL.</p>
 
     <h2>Credits</h2>
     <p>This recreates Sam Savitz's interactive GPU demo of the model (S. Savitz
