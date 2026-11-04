@@ -137,6 +137,66 @@ async function main() {
     }
   }
 
+  // Rendering against colormaps.to_rgb and fourier_rgb.
+  {
+    const f = await ref("render_field"), m = manifest.render_field;
+    const sim = new QC.QCSim(gpu, 128, Math.PI / m.dx);
+    sim.setField(f);
+    const view = new QC.QCView(gpu, sim, QCDATA.lut);
+    const readRGB = (opts, size) => {
+      const t = gpu.texture(size, size, "rgba8");
+      view.draw(opts, t);
+      const px = new Uint8Array(4 * size * size);
+      gpu.gl.bindFramebuffer(gpu.gl.FRAMEBUFFER, t.fbo);
+      gpu.gl.readPixels(0, 0, size, size, gpu.gl.RGBA, gpu.gl.UNSIGNED_BYTE, px);
+      gpu.free(t);
+      // readPixels row 0 is the bottom; image row 0 is the top.
+      const rgb = new Uint8Array(3 * size * size);
+      for (let y = 0; y < size; y++) for (let x = 0; x < size; x++)
+        for (let k = 0; k < 3; k++)
+          rgb[3 * (y * size + x) + k] = px[4 * ((size - 1 - y) * size + x) + k];
+      return rgb;
+    };
+    const compare = (got, want) => {
+      let off = 0, worst = 0;
+      for (let i = 0; i < want.length; i++) {
+        const d = Math.abs(got[i] - want[i]);
+        worst = Math.max(worst, d);
+        if (d > 1) off++;
+      }
+      return { frac: off / want.length, worst };
+    };
+    const rm = manifest.render_rgb;
+    let r = compare(readRGB({ cmap: rm.cmap, lo: rm.lo, hi: rm.hi }, 128),
+                    await ref("render_rgb"));
+    check("field colours match colormaps.to_rgb", r.frac <= 1e-3,
+          `${(100 * r.frac).toFixed(3)} % of channels off by >1, worst ${r.worst}`);
+
+    const Lp = view.logPower(), M = manifest.render_fourier.shape[0];
+    const lp = gpu.read(Lp);
+    const fmax = lp.reduce((a, b) => Math.max(a, b), 0);
+    r = compare(readRGB({ cmap: "red-white-blue", fourier: true, fourierMax: fmax }, M),
+                await ref("render_fourier"));
+    check(`Fourier view matches colormaps.fourier_rgb (${M}x${M} crop)`,
+          Lp.w === M && r.frac <= 1e-3,
+          `crop ${Lp.w}, ${(100 * r.frac).toFixed(3)} % off by >1, worst ${r.worst}`);
+
+    const p = QC.percentile(f.map(Math.abs), 99.5), want = manifest.render_p995;
+    check("auto range percentile matches numpy", Math.abs(p - want) < 1e-6,
+          `JS ${p}, Python ${want}`);
+
+    const ar = new QC.AsyncRead(gpu);
+    ar.start(sim.t.rho, 1);
+    let got = null;
+    for (let i = 0; i < 200 && !got; i++) {
+      await new Promise((res) => setTimeout(res, 5));
+      got = ar.poll();
+    }
+    check("async readback returns the field", got && maxAbs(got, f) === 0,
+          got ? "" : "never completed");
+    view.dispose(); sim.dispose();
+  }
+
   // Hash RNG: xi ~ N(0, 1).  Read the noise term itself with eps = 0
   // on a flat field.
   {
