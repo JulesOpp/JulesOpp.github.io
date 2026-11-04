@@ -108,7 +108,7 @@
         <button type="button" id="qc-save">Save image</button>
         <span class="status" id="qc-status" aria-live="off"></span>
       </div>
-      <p class="qc-hint">Drag to heat · Shift-drag or right-drag to cool · Space pauses.</p>
+      <p class="qc-hint">Drag to heat · Shift-drag or right-drag to cool · Space (with the pointer here) pauses.</p>
     </div>
 
     <aside class="qc-side">
@@ -1488,9 +1488,15 @@ $("qc-reset").addEventListener("change", (e) => {
   e.target.selectedIndex = 0;
 });
 $("qc-save").addEventListener("click", saveImage);
+// Space pauses only while the pointer is over the app: elsewhere on
+// the page it should still scroll.
+const section = document.querySelector(".qc");
+let overApp = false;
+section.addEventListener("pointerenter", () => { overApp = true; });
+section.addEventListener("pointerleave", () => { overApp = false; });
 document.addEventListener("keydown", (e) => {
   if (e.code !== "Space" || e.target.closest("input, select, button, textarea, a")) return;
-  if (!e.target.closest(".qc") && e.target !== document.body) return;
+  if (!overApp && !e.target.closest(".qc")) return;
   e.preventDefault();
   state.set({ running: !state.running });
 });
