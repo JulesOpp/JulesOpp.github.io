@@ -1,0 +1,767 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vial Holder STL Generator · Julius Oppenheim</title>
+  <meta name="description" content="Design a 3D-printable rack for lab vials in the browser and download it as an STL">
+  <link rel="stylesheet" href="../assets/style.css">
+  <link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+  <script src="../assets/theme.js"></script>
+<style>
+/* The app breaks out of the 52rem text column: 3D view on the left,
+   controls on the right, stacked below 900 px. */
+.vh { display: grid; grid-template-columns: minmax(0, 1fr) 21rem; gap: 1.25rem;
+  max-width: 80rem; margin: 0.5rem auto 1.5rem; padding: 0 1rem; align-items: start; }
+.vh-main { display: grid; gap: 0.5rem; min-width: 0; }
+.vh-stage { position: relative; width: 100%; aspect-ratio: 4 / 3; max-height: calc(100vh - 6rem);
+  background: var(--bg-soft); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.vh-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+  touch-action: none; cursor: grab; }
+.vh-stage canvas:active { cursor: grabbing; }
+.vh-msg { position: absolute; inset: 0; display: grid; place-items: center; padding: 2rem;
+  text-align: center; background: var(--bg-soft); color: var(--fg); font-size: 0.95rem; }
+.vh-msg[hidden] { display: none; }
+.vh-bar { display: flex; flex-wrap: wrap; gap: 0.4rem 0.5rem; align-items: center; font-size: 0.85rem; }
+.vh-bar .status { margin-left: auto; color: var(--muted); font-family: var(--mono); font-size: 0.78rem; }
+.vh-hint { margin: 0; color: var(--muted); font-size: 0.82rem; }
+.vh button, .vh select { font: inherit; font-size: 0.85rem; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 6px; padding: 0.22rem 0.6rem; }
+.vh button:hover, .vh select:hover { border-color: var(--accent); }
+.vh button.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.vh-side { display: grid; gap: 0.9rem; min-width: 0; }
+.vh fieldset { border: 0; border-top: 1px solid var(--line); margin: 0; padding: 0.45rem 0 0; min-width: 0; }
+.vh legend { font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); padding: 0 0.4rem 0 0; }
+.vh-row { display: grid; grid-template-columns: minmax(0, 1fr) 5.5rem 1.8rem; gap: 0.5rem;
+  align-items: center; font-size: 0.85rem; line-height: 1.2; margin: 0.25rem 0; }
+.vh-row .unit { color: var(--muted); font-size: 0.78rem; }
+.vh-row input[type="number"] { width: 100%; font: 0.82rem var(--mono); color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 4px; padding: 0.15rem 0.3rem; }
+.vh-row select { grid-column: 1 / 4; width: 100%; }
+.vh-row.full { grid-template-columns: 1fr; }
+.vh-note { margin: 0.1rem 0 0.2rem; color: var(--muted); font-size: 0.78rem; font-family: var(--mono); }
+.vh-out { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 0.75rem; font-size: 0.82rem; }
+.vh-out dt { color: var(--muted); }
+.vh-out dd { margin: 0; font-family: var(--mono); font-size: 0.8rem; }
+.vh-warn { margin: 0; padding: 0; list-style: none; font-size: 0.8rem; color: #b45309; }
+.vh-warn li { margin: 0.15rem 0; }
+.vh-warn:empty { display: none; }
+@media (max-width: 900px) {
+  .vh { grid-template-columns: minmax(0, 1fr); }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap">
+    <a class="site-name" href="../index.html">Julius Oppenheim</a>
+    <nav class="site-nav" aria-label="Main">
+      <a href="../index.html">Home</a>
+      <a href="../publications.html">Publications</a>
+      <a href="../software.html">Software</a>
+      <a href="../water-database.html">Water Database</a>
+      <a href="../blog/index.html" aria-current="page">Blog</a>
+      <a href="../cv.html">CV</a>
+      <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light and dark mode" hidden><svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v2.5M12 20v2.5M1.5 12H4M20 12h2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8"/></svg><svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"/></svg></button>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="vh" aria-label="Vial holder generator">
+    <div class="vh-main">
+      <div class="vh-stage">
+        <canvas id="vh-gl" role="img" aria-label="3D preview of the vial holder. Drag to rotate, scroll or pinch to zoom."></canvas>
+        <div class="vh-msg" id="vh-msg" hidden></div>
+      </div>
+      <div class="vh-bar">
+        <button type="button" class="primary" id="vh-stl">Download STL</button>
+        <button type="button" id="vh-scad">Download .scad</button>
+        <button type="button" id="vh-view">Reset view</button>
+        <span class="status" id="vh-status" aria-live="polite"></span>
+      </div>
+      <p class="vh-hint">Drag to rotate · scroll or pinch to zoom · double-click to reset. The grid on the floor is 10 mm.</p>
+    </div>
+
+    <aside class="vh-side">
+      <form id="vh-form" onsubmit="return false">
+        <fieldset><legend>Vial</legend>
+          <div class="vh-row"><select id="vh-preset" aria-label="Vial type"></select></div>
+          <div class="vh-row"><label for="vh-vialR">vial radius</label><input type="number" id="vh-vialR" step="0.05" min="1"><span class="unit">mm</span></div>
+          <div class="vh-row"><label for="vh-clearance">clearance on Ø</label><input type="number" id="vh-clearance" step="0.05" min="0"><span class="unit">mm</span></div>
+          <div class="vh-row"><label for="vh-depth">hole depth</label><input type="number" id="vh-depth" step="0.5" min="1"><span class="unit">mm</span></div>
+          <p class="vh-note" id="vh-hole"></p>
+        </fieldset>
+        <fieldset><legend>Grid</legend>
+          <div class="vh-row"><label for="vh-rows">rows (n)</label><input type="number" id="vh-rows" step="1" min="1" max="30"><span class="unit"></span></div>
+          <div class="vh-row"><label for="vh-cols">columns (m)</label><input type="number" id="vh-cols" step="1" min="1" max="30"><span class="unit"></span></div>
+          <div class="vh-row"><label for="vh-wall">wall between holes</label><input type="number" id="vh-wall" step="0.25" min="0.8"><span class="unit">mm</span></div>
+          <div class="vh-row"><label for="vh-margin">edge wall</label><input type="number" id="vh-margin" step="0.5" min="1"><span class="unit">mm</span></div>
+        </fieldset>
+        <fieldset><legend>Block</legend>
+          <div class="vh-row"><label for="vh-floor">floor thickness</label><input type="number" id="vh-floor" step="0.5" min="0.6"><span class="unit">mm</span></div>
+          <div class="vh-row"><label for="vh-fillet">outer fillet radius</label><input type="number" id="vh-fillet" step="0.5" min="0"><span class="unit">mm</span></div>
+          <div class="vh-row"><label for="vh-chamfer">hole chamfer</label><input type="number" id="vh-chamfer" step="0.25" min="0"><span class="unit">mm</span></div>
+          <div class="vh-row"><label for="vh-pushD">push-out hole Ø</label><input type="number" id="vh-pushD" step="0.5" min="0"><span class="unit">mm</span></div>
+          <div class="vh-row"><label for="vh-seg">circle segments</label>
+            <select id="vh-seg" style="grid-column: 2 / 4"><option value="32">32 (draft)</option><option value="64" selected>64</option><option value="96">96</option><option value="128">128 (fine)</option></select></div>
+        </fieldset>
+        <fieldset><legend>Result</legend>
+          <dl class="vh-out" id="vh-out"></dl>
+          <ul class="vh-warn" id="vh-warn"></ul>
+        </fieldset>
+      </form>
+    </aside>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <nav aria-label="Profiles">
+        <a href="mailto:juliuso@princeton.edu">Email</a>
+        <span>·</span>
+        <a href="https://scholar.google.com/citations?user=2yNJuKkAAAAJ&amp;hl=en">Google Scholar</a>
+        <span>·</span>
+        <a href="https://orcid.org/0000-0002-5988-0677">ORCID</a>
+        <span>·</span>
+        <a href="https://www.linkedin.com/in/julius-oppenheim-a59779283/">LinkedIn</a>
+        <span>·</span>
+        <a href="https://github.com/JulesOpp">GitHub</a>
+        <span>·</span>
+        <a href="https://bsky.app/profile/jules-oppenheim.bsky.social">Bluesky</a>
+    </nav>
+    <p>© 2026 Julius Oppenheim</p>
+  </div>
+</footer>
+
+<script id="vh-core">
+// Geometry for the vial holder: a closed, outward-wound triangle mesh
+// built directly (no booleans). tools/vial-holder/check.html tests it.
+const VH = (() => {
+"use strict";
+
+// d: vial outer diameter (mm), h: vial height, depth: default hole depth.
+const PRESETS = [
+  { id: "2mL",     name: "2 mL autosampler vial (12 × 32 mm)",  d: 12.0, h: 32,  depth: 19 },
+  { id: "4mL",     name: "4 mL / 1 dram vial (15 × 45 mm)",     d: 15.0, h: 45,  depth: 25 },
+  { id: "8mL",     name: "8 mL / 2 dram vial (17 × 61 mm)",     d: 17.0, h: 61,  depth: 32 },
+  { id: "20mL",    name: "20 mL scintillation vial (28 × 61 mm)", d: 28.0, h: 61, depth: 35 },
+  { id: "40mL",    name: "40 mL VOA vial (28 × 95 mm)",         d: 28.0, h: 95,  depth: 45 },
+  { id: "10mLHS",  name: "10 mL headspace vial (22.5 × 46 mm)", d: 22.5, h: 46,  depth: 25 },
+  { id: "20mLHS",  name: "20 mL headspace vial (22.5 × 75 mm)", d: 22.5, h: 75,  depth: 35 },
+  { id: "1.5mL",   name: "1.5 / 2 mL microtube (10.8 mm)",      d: 10.8, h: 39,  depth: 20 },
+  { id: "15mL",    name: "15 mL centrifuge tube (17 × 120 mm)", d: 17.0, h: 120, depth: 40 },
+  { id: "50mL",    name: "50 mL centrifuge tube (30 × 115 mm)", d: 30.0, h: 115, depth: 45 },
+  { id: "NMR",     name: "5 mm NMR tube",                       d: 5.0,  h: 178, depth: 30 },
+];
+
+const DEFAULTS = { preset: "2mL", vialR: 6, clearance: 0.25, depth: 19, rows: 4, cols: 8,
+  wall: 2.25, margin: 6, floor: 3, fillet: 3, chamfer: 0.7, pushD: 0, seg: 64 };
+
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const fmt = (x) => (Math.round(x * 100) / 100).toString();
+
+// Clamp the inputs into a set that always gives a valid mesh, and say
+// what was changed.
+function normalize(inp) {
+  const warnings = [];
+  const g = (k) => { const v = Number(inp[k]); return Number.isFinite(v) ? v : DEFAULTS[k]; };
+  const rows = clamp(Math.round(g("rows")), 1, 30), cols = clamp(Math.round(g("cols")), 1, 30);
+  const vialR = clamp(g("vialR"), 1, 60);
+  const clearance = clamp(g("clearance"), 0, 3);
+  const R = vialR + clearance / 2, D = 2 * R;
+  const depth = clamp(g("depth"), 1, 250);
+  const floor = clamp(g("floor"), 0.6, 50);
+  const wall = clamp(g("wall"), 0.8, 50);
+  const margin = clamp(g("margin"), 1, 100);
+  const pitch = D + wall, H = depth + floor;
+  const L = (cols - 1) * pitch + D + 2 * margin, W = (rows - 1) * pitch + D + 2 * margin;
+
+  let ch = clamp(g("chamfer"), 0, 20);
+  const chMax = Math.max(0, Math.min((wall - 0.8) / 2, margin - 0.8, depth - 0.5));
+  if (ch > chMax + 1e-9) {
+    warnings.push(`Chamfer cut to ${fmt(chMax)} mm to keep 0.8 mm of wall between holes.`);
+    ch = chMax;
+  }
+  let rf = clamp(g("fillet"), 0, 100);
+  const rfMax = Math.max(0, Math.min(H / 2 - 0.05, margin - ch - 0.4));
+  if (rf > rfMax + 1e-9) {
+    warnings.push(`Fillet cut to ${fmt(rfMax)} mm so it stays clear of the holes (raise the edge wall or the height for more).`);
+    rf = rfMax;
+  }
+  let rp = clamp(g("pushD"), 0, 200) / 2;
+  if (rp > 0 && rp > R - 0.5) {
+    rp = Math.max(0, R - 0.5);
+    warnings.push(`Push-out hole cut to Ø ${fmt(2 * rp)} mm to leave a ledge for the vial.`);
+  }
+  if (rp > 0 && rp < 0.5) rp = 0;
+  const seg = [32, 48, 64, 96, 128].includes(Number(inp.seg)) ? Number(inp.seg) : 64;
+  if (Math.max(L, W) > 250) warnings.push(`At ${fmt(Math.max(L, W))} mm it is larger than most printer beds (about 220–256 mm).`);
+  return { rows, cols, vialR, clearance, R, D, depth, floor, wall, margin, pitch, H, L, W,
+    ch, rf, rp, seg, warnings };
+}
+
+// P: output of normalize. Returns { pos: Float64Array, idx: Uint32Array, P }.
+// x, y are centred on the block, z runs from 0 (bed) to H.
+function build(P) {
+  const { rows: n, cols: m, R, depth, pitch, H, L, W, ch, rf, rp, margin } = P;
+  const N = P.seg, q = N / 4;
+  const K = rf > 0 ? clamp(Math.ceil(rf * 2), 3, 12) : 0;
+  const pos = [], idx = [];
+  const addV = (x, y, z) => { pos.push(x, y, z); return pos.length / 3 - 1; };
+  const tri = (a, b, c) => { if (a !== b && b !== c && a !== c) idx.push(a, b, c); };
+  const area2 = (a, b, c) => (pos[3 * b] - pos[3 * a]) * (pos[3 * c + 1] - pos[3 * a + 1])
+                           - (pos[3 * b + 1] - pos[3 * a + 1]) * (pos[3 * c] - pos[3 * a]);
+
+  const cx = (j) => margin + R + j * pitch, cy = (k) => margin + R + k * pitch;
+  // Cell boundaries on the flat top: midway between holes, and the edge
+  // of the flat region (inset by the fillet) at the ends. A wide edge
+  // gets its own ring of solid cells (s = 1) so no cell is long and thin.
+  const s0 = margin - P.wall / 2 - rf > 0.25 * pitch ? 1 : 0;
+  const mc = m + 2 * s0, nc = n + 2 * s0;
+  const bx = [rf], by = [rf];
+  for (let j = 1 - s0; j < m + s0; j++) bx.push(cx(j) - pitch / 2);
+  for (let k = 1 - s0; k < n + s0; k++) by.push(cy(k) - pitch / 2);
+  bx.push(L - rf); by.push(W - rf);
+  const holeAt = (j, k) => (j -= s0, k -= s0, j >= 0 && j < m && k >= 0 && k < n ? holes[k * m + j] : null);
+
+  // Circle i sits at angle -45° + 360° i/N, so i = 0, q, 2q, 3q face the
+  // cell corners.
+  const ring = (x0, y0, r, z) => {
+    const out = new Array(N);
+    for (let i = 0; i < N; i++) {
+      const t = -Math.PI / 4 + 2 * Math.PI * i / N;
+      out[i] = addV(x0 + r * Math.cos(t), y0 + r * Math.sin(t), z);
+    }
+    return out;
+  };
+
+  // Holes
+  const holes = [];
+  for (let k = 0; k < n; k++) for (let j = 0; j < m; j++) {
+    const x0 = cx(j), y0 = cy(k), h = {};
+    h.top = ring(x0, y0, R + ch, H);
+    h.cham = ch > 0 ? ring(x0, y0, R, H - ch) : h.top;
+    h.floor = ring(x0, y0, R, H - depth);
+    if (rp > 0) { h.push = ring(x0, y0, rp, H - depth); h.pushB = ring(x0, y0, rp, 0); }
+    else h.ctr = addV(x0, y0, H - depth);
+    holes.push(h);
+  }
+
+  // A flat face at height z over the cell grid. inner(j, k) gives the
+  // hole rim in that cell, or null for a solid cell. Returns the face's
+  // outer boundary so the side walls can join it.
+  function face(z, up, inner) {
+    const map = new Map();
+    const get = (key, x, y) => { let i = map.get(key); if (i === undefined) { i = addV(x, y, z); map.set(key, i); } return i; };
+    const node = (j, k) => get(`n${j},${k}`, bx[j], by[k]);
+    const vpt = (j, k, s) => s === 0 ? node(j, k) : s === q ? node(j, k + 1)
+      : get(`v${j},${k},${s}`, bx[j], by[k] + (by[k + 1] - by[k]) * s / q);
+    const hpt = (j, k, s) => s === 0 ? node(j, k) : s === q ? node(j + 1, k)
+      : get(`h${j},${k},${s}`, bx[j] + (bx[j + 1] - bx[j]) * s / q, by[k]);
+    const em = up ? tri : (a, b, c) => tri(a, c, b);
+    for (let k = 0; k < nc; k++) for (let j = 0; j < mc; j++) {
+      // Cell boundary, counter-clockwise from the bottom-right corner.
+      const B = [];
+      for (let s = 0; s < q; s++) B.push(vpt(j + 1, k, s));
+      for (let s = 0; s < q; s++) B.push(hpt(j, k + 1, q - s));
+      for (let s = 0; s < q; s++) B.push(vpt(j, k, q - s));
+      for (let s = 0; s < q; s++) B.push(hpt(j, k, s));
+      const C = inner(j, k);
+      if (C) {
+        for (let i = 0; i < N; i++) {
+          const c0 = C[i], c1 = C[(i + 1) % N], b0 = B[i], b1 = B[(i + 1) % N];
+          // Pick the diagonal that keeps both triangles fattest.
+          const a = Math.min(area2(c0, b0, b1), area2(c0, b1, c1));
+          const b = Math.min(area2(c0, b0, c1), area2(b0, b1, c1));
+          if (a >= b) { em(c0, b0, b1); em(c0, b1, c1); } else { em(c0, b0, c1); em(b0, b1, c1); }
+        }
+      } else {
+        const ctr = addV((bx[j] + bx[j + 1]) / 2, (by[k] + by[k + 1]) / 2, z);
+        for (let i = 0; i < N; i++) em(ctr, B[i], B[(i + 1) % N]);
+      }
+    }
+    const bottom = [], right = [], top = [], left = [];
+    for (let j = 0; j < mc; j++) for (let s = 0; s < q; s++) { bottom.push(hpt(j, 0, s)); top.push(hpt(j, nc, s)); }
+    bottom.push(node(mc, 0)); top.push(node(mc, nc));
+    for (let k = 0; k < nc; k++) for (let s = 0; s < q; s++) { right.push(vpt(mc, k, s)); left.push(vpt(0, k, s)); }
+    right.push(node(mc, nc)); left.push(node(0, nc));
+    return { bottom, right, top: top.reverse(), left: left.reverse() };
+  }
+
+  const topF = face(H, true, (j, k) => { const h = holeAt(j, k); return h && h.top; });
+  const botF = face(0, false, (j, k) => { const h = holeAt(j, k); return h && rp > 0 ? h.pushB : null; });
+
+  // Walls facing into a hole, from ring U down to ring D.
+  const holeWall = (U, D) => {
+    for (let i = 0; i < N; i++) { const i1 = (i + 1) % N; tri(D[i], U[i], U[i1]); tri(D[i], U[i1], D[i1]); }
+  };
+  for (const h of holes) {
+    if (ch > 0) holeWall(h.top, h.cham);
+    holeWall(h.cham, h.floor);
+    if (rp > 0) {
+      for (let i = 0; i < N; i++) {
+        const i1 = (i + 1) % N;
+        tri(h.push[i], h.floor[i], h.floor[i1]); tri(h.push[i], h.floor[i1], h.push[i1]);
+      }
+      holeWall(h.push, h.pushB);
+    } else {
+      for (let i = 0; i < N; i++) tri(h.ctr, h.floor[i], h.floor[(i + 1) % N]);
+    }
+  }
+
+  // Outer shell: rounded rectangles stacked along the fillet profile,
+  // from the edge of the flat top to the edge of the flat bottom.
+  const Xs = topF.bottom.map((v) => pos[3 * v]), Ys = topF.right.map((v) => pos[3 * v + 1]);
+  const x0 = rf, x1 = L - rf, y0 = rf, y1 = W - rf;
+  function shellRing(o, z, f) {
+    const out = [];
+    const arc = (xc, yc, a0, corner) => {
+      for (let a = 1; a < K; a++) {
+        const t = a0 + (Math.PI / 2) * a / K;
+        out.push(f ? corner : addV(xc + o * Math.cos(t), yc + o * Math.sin(t), z));
+      }
+    };
+    Xs.forEach((x, i) => out.push(f ? f.bottom[i] : addV(x, y0 - o, z)));
+    arc(x1, y0, -Math.PI / 2, f && f.right[0]);
+    Ys.forEach((y, i) => out.push(f ? f.right[i] : addV(x1 + o, y, z)));
+    arc(x1, y1, 0, f && f.top[0]);
+    Xs.forEach((x, i) => out.push(f ? f.top[i] : addV(Xs[Xs.length - 1 - i], y1 + o, z)));
+    arc(x0, y1, Math.PI / 2, f && f.left[0]);
+    Ys.forEach((y, i) => out.push(f ? f.left[i] : addV(x0 - o, Ys[Ys.length - 1 - i], z)));
+    arc(x0, y0, Math.PI, f && f.bottom[0]);
+    return out;
+  }
+  const profile = [];
+  if (K > 0) {
+    for (let a = 0; a <= K; a++) { const t = (Math.PI / 2) * a / K; profile.push([rf * Math.sin(t), H - rf + rf * Math.cos(t)]); }
+    for (let a = 0; a <= K; a++) { const t = (Math.PI / 2) * a / K; profile.push([rf * Math.cos(t), rf - rf * Math.sin(t)]); }
+  } else profile.push([0, H], [0, 0]);
+  const rings = profile.map(([o, z], i) =>
+    shellRing(o, z, i === 0 ? topF : i === profile.length - 1 ? botF : null));
+  for (let r = 0; r + 1 < rings.length; r++) {
+    const U = rings[r], D = rings[r + 1], len = U.length;
+    for (let i = 0; i < len; i++) {
+      const i1 = (i + 1) % len;
+      tri(D[i], D[i1], U[i1]); tri(D[i], U[i1], U[i]);
+    }
+  }
+
+  for (let i = 0; i < pos.length; i += 3) { pos[i] -= L / 2; pos[i + 1] -= W / 2; }
+  return { pos: Float64Array.from(pos), idx: Uint32Array.from(idx), P };
+}
+
+function volume(mesh) {
+  const { pos: p, idx } = mesh;
+  let v = 0;
+  for (let t = 0; t < idx.length; t += 3) {
+    const a = 3 * idx[t], b = 3 * idx[t + 1], c = 3 * idx[t + 2];
+    v += p[a] * (p[b + 1] * p[c + 2] - p[b + 2] * p[c + 1])
+       - p[a + 1] * (p[b] * p[c + 2] - p[b + 2] * p[c])
+       + p[a + 2] * (p[b] * p[c + 1] - p[b + 1] * p[c]);
+  }
+  return v / 6;
+}
+
+function toSTL(mesh) {
+  const { pos: p, idx } = mesh, T = idx.length / 3;
+  const buf = new ArrayBuffer(84 + 50 * T), dv = new DataView(buf);
+  const head = "Vial holder from julesopp.github.io/blog/vial-holder-generator.html";
+  for (let i = 0; i < 80; i++) dv.setUint8(i, i < head.length ? head.charCodeAt(i) : 32);
+  dv.setUint32(80, T, true);
+  let o = 84;
+  for (let t = 0; t < T; t++) {
+    const a = 3 * idx[3 * t], b = 3 * idx[3 * t + 1], c = 3 * idx[3 * t + 2];
+    const ux = p[b] - p[a], uy = p[b + 1] - p[a + 1], uz = p[b + 2] - p[a + 2];
+    const vx = p[c] - p[a], vy = p[c + 1] - p[a + 1], vz = p[c + 2] - p[a + 2];
+    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const l = Math.hypot(nx, ny, nz) || 1;
+    dv.setFloat32(o, nx / l, true); dv.setFloat32(o + 4, ny / l, true); dv.setFloat32(o + 8, nz / l, true);
+    o += 12;
+    for (const v of [a, b, c]) {
+      dv.setFloat32(o, p[v], true); dv.setFloat32(o + 4, p[v + 1], true); dv.setFloat32(o + 8, p[v + 2], true);
+      o += 12;
+    }
+    dv.setUint16(o, 0, true); o += 2;
+  }
+  return buf;
+}
+
+// The same part as an OpenSCAD script, centred the same way.
+function toSCAD(P) {
+  const f = (x) => fmt(x);
+  return `// Vial holder from julesopp.github.io/blog/vial-holder-generator.html
+// All sizes in mm.
+rows = ${P.rows};          // n
+cols = ${P.cols};          // m
+hole_d = ${f(P.D)};      // vial diameter + clearance
+depth = ${f(P.depth)};       // hole depth from the top surface
+floor_t = ${f(P.floor)};      // floor under each hole
+wall = ${f(P.wall)};        // wall between neighbouring holes
+edge = ${f(P.margin)};          // wall from the outer holes to the side
+fillet = ${f(P.rf)};        // radius on all outer edges
+chamfer = ${f(P.ch)};       // chamfer at the top of each hole
+push_d = ${f(2 * P.rp)};        // through-hole in each floor, 0 for none
+$fn = ${P.seg};
+
+pitch = hole_d + wall;
+L = (cols - 1) * pitch + hole_d + 2 * edge;
+W = (rows - 1) * pitch + hole_d + 2 * edge;
+H = depth + floor_t;
+
+module block() {
+  if (fillet > 0)
+    hull() for (x = [fillet, L - fillet], y = [fillet, W - fillet], z = [fillet, H - fillet])
+      translate([x, y, z]) sphere(r = fillet, $fn = 32);
+  else cube([L, W, H]);
+}
+
+translate([-L / 2, -W / 2, 0]) difference() {
+  block();
+  for (i = [0 : cols - 1], j = [0 : rows - 1])
+    translate([edge + hole_d / 2 + i * pitch, edge + hole_d / 2 + j * pitch, 0]) {
+      translate([0, 0, H - depth]) cylinder(d = hole_d, h = depth + 1);
+      if (chamfer > 0)
+        translate([0, 0, H - chamfer]) cylinder(d1 = hole_d, d2 = hole_d + 2 * chamfer + 0.02, h = chamfer + 0.01);
+      if (push_d > 0) translate([0, 0, -1]) cylinder(d = push_d, h = H);
+    }
+}
+`;
+}
+
+return { PRESETS, DEFAULTS, normalize, build, volume, toSTL, toSCAD };
+})();
+</script>
+
+<script id="vh-view">
+// A small WebGL viewer: one shaded mesh, a floor grid, orbit controls.
+const VHView = (() => {
+"use strict";
+
+const VS = `attribute vec3 aP; attribute vec3 aN; uniform mat4 uM;
+varying vec3 vN; varying vec3 vW;
+void main() { vN = aN; vW = aP; gl_Position = uM * vec4(aP, 1.0); }`;
+const FS = `#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+varying vec3 vN; varying vec3 vW;
+uniform vec3 uCol; uniform vec3 uEye; uniform vec3 uKey;
+void main() {
+  vec3 n = normalize(vN), v = normalize(uEye - vW), l = normalize(uKey);
+  if (dot(n, v) < 0.0) n = -n;
+  float d1 = max(dot(n, l), 0.0), d2 = max(dot(n, v), 0.0);
+  float sp = pow(max(dot(n, normalize(l + v)), 0.0), 48.0);
+  float rim = pow(1.0 - d2, 3.0);
+  vec3 c = uCol * (0.22 + 0.55 * d1 + 0.33 * d2) + vec3(0.16) * sp + vec3(0.12) * rim;
+  gl_FragColor = vec4(c, 1.0);
+}`;
+const LVS = `attribute vec3 aP; uniform mat4 uM; void main() { gl_Position = uM * vec4(aP, 1.0); }`;
+const LFS = `precision mediump float; uniform vec4 uCol; void main() { gl_FragColor = uCol; }`;
+
+function compile(gl, vs, fs) {
+  const prog = gl.createProgram();
+  for (const [type, src] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]]) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    gl.attachShader(prog, s);
+  }
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  return prog;
+}
+
+// Column-major 4x4 helpers.
+function perspective(fy, asp, near, far) {
+  const f = 1 / Math.tan(fy / 2), nf = 1 / (near - far);
+  return [f / asp, 0, 0, 0, 0, f, 0, 0, 0, 0, (far + near) * nf, -1, 0, 0, 2 * far * near * nf, 0];
+}
+function lookAt(e, t, u) {
+  let zx = e[0] - t[0], zy = e[1] - t[1], zz = e[2] - t[2];
+  let l = Math.hypot(zx, zy, zz); zx /= l; zy /= l; zz /= l;
+  let xx = u[1] * zz - u[2] * zy, xy = u[2] * zx - u[0] * zz, xz = u[0] * zy - u[1] * zx;
+  l = Math.hypot(xx, xy, xz); xx /= l; xy /= l; xz /= l;
+  const yx = zy * xz - zz * xy, yy = zz * xx - zx * xz, yz = zx * xy - zy * xx;
+  return [xx, yx, zx, 0, xy, yy, zy, 0, xz, yz, zz, 0,
+    -(xx * e[0] + xy * e[1] + xz * e[2]), -(yx * e[0] + yy * e[1] + yz * e[2]), -(zx * e[0] + zy * e[1] + zz * e[2]), 1];
+}
+function mul(a, b) {
+  const o = new Float32Array(16);
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) {
+    let s = 0;
+    for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k];
+    o[c * 4 + r] = s;
+  }
+  return o;
+}
+
+// Unindexed positions and normals, smoothing across edges sharper than
+// the crease angle only.
+function shade(mesh, creaseDeg = 35) {
+  const { pos: p, idx } = mesh, T = idx.length / 3, V = p.length / 3;
+  const fn = new Float64Array(3 * T), un = new Float64Array(3 * T);
+  for (let t = 0; t < T; t++) {
+    const a = 3 * idx[3 * t], b = 3 * idx[3 * t + 1], c = 3 * idx[3 * t + 2];
+    const ux = p[b] - p[a], uy = p[b + 1] - p[a + 1], uz = p[b + 2] - p[a + 2];
+    const vx = p[c] - p[a], vy = p[c + 1] - p[a + 1], vz = p[c + 2] - p[a + 2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const l = Math.hypot(nx, ny, nz) || 1;
+    fn[3 * t] = nx; fn[3 * t + 1] = ny; fn[3 * t + 2] = nz;
+    un[3 * t] = nx / l; un[3 * t + 1] = ny / l; un[3 * t + 2] = nz / l;
+  }
+  const start = new Uint32Array(V + 1);
+  for (let i = 0; i < idx.length; i++) start[idx[i] + 1]++;
+  for (let v = 0; v < V; v++) start[v + 1] += start[v];
+  const fill = start.slice(0, V), adj = new Uint32Array(idx.length);
+  for (let i = 0; i < idx.length; i++) adj[fill[idx[i]]++] = (i / 3) | 0;
+  const cosC = Math.cos(creaseDeg * Math.PI / 180);
+  const P = new Float32Array(9 * T), Nn = new Float32Array(9 * T);
+  for (let t = 0; t < T; t++) for (let c = 0; c < 3; c++) {
+    const v = idx[3 * t + c], o = 9 * t + 3 * c;
+    let sx = 0, sy = 0, sz = 0;
+    for (let k = start[v]; k < start[v + 1]; k++) {
+      const s = adj[k];
+      if (un[3 * t] * un[3 * s] + un[3 * t + 1] * un[3 * s + 1] + un[3 * t + 2] * un[3 * s + 2] > cosC) {
+        sx += fn[3 * s]; sy += fn[3 * s + 1]; sz += fn[3 * s + 2];
+      }
+    }
+    const l = Math.hypot(sx, sy, sz) || 1;
+    P[o] = p[3 * v]; P[o + 1] = p[3 * v + 1]; P[o + 2] = p[3 * v + 2];
+    Nn[o] = sx / l; Nn[o + 1] = sy / l; Nn[o + 2] = sz / l;
+  }
+  return { P, N: Nn };
+}
+
+function cssColor(name, fallback) {
+  const s = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const m = /^#([0-9a-f]{6})$/i.exec(s);
+  if (!m) return fallback;
+  const v = parseInt(m[1], 16);
+  return [(v >> 16 & 255) / 255, (v >> 8 & 255) / 255, (v & 255) / 255];
+}
+
+function create(canvas) {
+  let gl = null;
+  try { gl = canvas.getContext("webgl", { antialias: true, preserveDrawingBuffer: true }); } catch (e) { gl = null; }
+  if (!gl) return null;
+  const prog = compile(gl, VS, FS), lprog = compile(gl, LVS, LFS);
+  const loc = {
+    aP: gl.getAttribLocation(prog, "aP"), aN: gl.getAttribLocation(prog, "aN"),
+    uM: gl.getUniformLocation(prog, "uM"), uCol: gl.getUniformLocation(prog, "uCol"),
+    uEye: gl.getUniformLocation(prog, "uEye"), uKey: gl.getUniformLocation(prog, "uKey"),
+    laP: gl.getAttribLocation(lprog, "aP"), luM: gl.getUniformLocation(lprog, "uM"), luCol: gl.getUniformLocation(lprog, "uCol"),
+  };
+  const bufP = gl.createBuffer(), bufN = gl.createBuffer(), bufL = gl.createBuffer();
+  let count = 0, lineCount = 0, size = [100, 100, 20];
+  const cam = { yaw: -2.2, pitch: 0.62, dist: 300, zoom: 1 };
+  let pending = false;
+
+  function setMesh(mesh) {
+    const { P, N } = shade(mesh);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufP); gl.bufferData(gl.ARRAY_BUFFER, P, gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufN); gl.bufferData(gl.ARRAY_BUFFER, N, gl.STATIC_DRAW);
+    count = P.length / 3;
+    size = [mesh.P.L, mesh.P.W, mesh.P.H];
+    // Floor grid, 10 mm squares, a little past the footprint.
+    const ext = Math.ceil((Math.max(size[0], size[1]) * 0.5 + 20) / 10) * 10, g = [];
+    for (let x = -ext; x <= ext + 1e-6; x += 10) g.push(x, -ext, -0.05, x, ext, -0.05, -ext, x, -0.05, ext, x, -0.05);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufL); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(g), gl.STATIC_DRAW);
+    lineCount = g.length / 3;
+    redraw();
+  }
+
+  function draw() {
+    pending = false;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.max(1, Math.round(canvas.clientWidth * dpr)), h = Math.max(1, Math.round(canvas.clientHeight * dpr));
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    gl.viewport(0, 0, w, h);
+    const bg = cssColor("--bg-soft", [0.95, 0.95, 0.96]);
+    gl.clearColor(bg[0], bg[1], bg[2], 1);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.DEPTH_TEST);
+
+    const rad = 0.5 * Math.hypot(size[0], size[1], size[2]);
+    const fov = 0.6, asp = w / h;
+    const fit = rad / Math.sin(Math.min(fov, 2 * Math.atan(Math.tan(fov / 2) * asp)) / 2);
+    const d = fit * 1.05 * cam.zoom;
+    const t = [0, 0, size[2] * 0.35];
+    const cp = Math.cos(cam.pitch);
+    const eye = [t[0] + d * cp * Math.cos(cam.yaw), t[1] + d * cp * Math.sin(cam.yaw), t[2] + d * Math.sin(cam.pitch)];
+    const M = mul(perspective(fov, asp, Math.max(0.5, d - 2 * rad - 50), d + 4 * rad + 200), lookAt(eye, t, [0, 0, 1]));
+
+    const lc = cssColor("--line", [0.88, 0.89, 0.91]);
+    gl.useProgram(lprog);
+    gl.uniformMatrix4fv(loc.luM, false, M);
+    gl.uniform4f(loc.luCol, lc[0], lc[1], lc[2], 1);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufL);
+    gl.enableVertexAttribArray(loc.laP);
+    gl.vertexAttribPointer(loc.laP, 3, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.LINES, 0, lineCount);
+    gl.disableVertexAttribArray(loc.laP);
+
+    if (!count) return;
+    const col = cssColor("--accent", [0.18, 0.33, 0.78]).map((c) => 0.8 * c + 0.2);
+    gl.useProgram(prog);
+    gl.uniformMatrix4fv(loc.uM, false, M);
+    gl.uniform3f(loc.uCol, col[0], col[1], col[2]);
+    gl.uniform3f(loc.uEye, eye[0], eye[1], eye[2]);
+    // Key light from above, over the viewer's left shoulder.
+    gl.uniform3f(loc.uKey, Math.cos(cam.yaw - 0.8), Math.sin(cam.yaw - 0.8), 1.6);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufP); gl.enableVertexAttribArray(loc.aP);
+    gl.vertexAttribPointer(loc.aP, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufN); gl.enableVertexAttribArray(loc.aN);
+    gl.vertexAttribPointer(loc.aN, 3, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.TRIANGLES, 0, count);
+    gl.disableVertexAttribArray(loc.aP); gl.disableVertexAttribArray(loc.aN);
+  }
+  function redraw() { if (!pending) { pending = true; requestAnimationFrame(draw); } }
+  function resetView() { cam.yaw = -2.2; cam.pitch = 0.62; cam.zoom = 1; redraw(); }
+
+  // Pointer controls: one pointer orbits, two pinch-zoom.
+  const pts = new Map();
+  let pinch0 = 0, zoom0 = 1;
+  canvas.addEventListener("pointerdown", (e) => {
+    canvas.setPointerCapture(e.pointerId);
+    pts.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch0 = Math.hypot(a[0] - b[0], a[1] - b[1]); zoom0 = cam.zoom; }
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    const prev = pts.get(e.pointerId);
+    if (!prev) return;
+    const cur = [e.clientX, e.clientY];
+    pts.set(e.pointerId, cur);
+    if (pts.size === 1) {
+      cam.yaw -= (cur[0] - prev[0]) * 0.008;
+      cam.pitch = Math.max(-1.5, Math.min(1.5, cam.pitch + (cur[1] - prev[1]) * 0.008));
+    } else if (pts.size === 2 && pinch0 > 0) {
+      const [a, b] = [...pts.values()];
+      cam.zoom = Math.max(0.15, Math.min(4, zoom0 * pinch0 / Math.max(1, Math.hypot(a[0] - b[0], a[1] - b[1]))));
+    }
+    redraw();
+  });
+  const up = (e) => { pts.delete(e.pointerId); pinch0 = 0; };
+  canvas.addEventListener("pointerup", up);
+  canvas.addEventListener("pointercancel", up);
+  canvas.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    cam.zoom = Math.max(0.15, Math.min(4, cam.zoom * Math.exp(e.deltaY * 0.0015)));
+    redraw();
+  }, { passive: false });
+  canvas.addEventListener("dblclick", resetView);
+  new ResizeObserver(redraw).observe(canvas);
+  new MutationObserver(redraw).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", redraw);
+
+  return { setMesh, redraw, resetView };
+}
+
+return { create, shade };
+})();
+</script>
+
+<script id="vh-ui">
+(() => {
+"use strict";
+const $ = (id) => document.getElementById(id);
+const FIELDS = ["vialR", "clearance", "depth", "rows", "cols", "wall", "margin", "floor", "fillet", "chamfer", "pushD"];
+const presetSel = $("vh-preset");
+for (const p of VH.PRESETS) presetSel.add(new Option(p.name, p.id));
+presetSel.add(new Option("Custom", "custom"));
+
+function setInputs(v) {
+  for (const k of FIELDS) $("vh-" + k).value = v[k];
+  presetSel.value = v.preset;
+  $("vh-seg").value = String(v.seg);
+}
+function readInputs() {
+  const v = { seg: $("vh-seg").value };
+  for (const k of FIELDS) v[k] = $("vh-" + k).value === "" ? NaN : Number($("vh-" + k).value);
+  return v;
+}
+setInputs(VH.DEFAULTS);
+
+let view = null;
+try { view = VHView.create($("vh-gl")); } catch (e) { console.error(e); view = null; }
+if (!view) {
+  $("vh-msg").textContent = "This browser could not start WebGL, so there is no preview. The STL download still works.";
+  $("vh-msg").hidden = false;
+}
+
+const fmt = (x, d = 1) => x.toFixed(d);
+let mesh = null, P = null, timer = 0;
+
+function rebuild() {
+  P = VH.normalize(readInputs());
+  const t0 = performance.now();
+  mesh = VH.build(P);
+  const ms = performance.now() - t0;
+  const vol = VH.volume(mesh) / 1000; // cm³
+  const T = mesh.idx.length / 3;
+  $("vh-hole").textContent = `vial Ø ${fmt(2 * P.vialR, 2)} → hole Ø ${fmt(P.D, 2)}, pitch ${fmt(P.pitch, 2)} mm`;
+  const rows = [
+    ["block", `${fmt(P.L)} × ${fmt(P.W)} × ${fmt(P.H)} mm`],
+    ["vials", `${P.rows * P.cols} (${P.rows} × ${P.cols})`],
+    ["volume", `${fmt(vol)} cm³ ≈ ${Math.round(vol * 1.24)} g PLA solid`],
+    ["mesh", `${(T / 1000).toFixed(T < 10000 ? 1 : 0)}k triangles, ${((84 + 50 * T) / 1048576).toFixed(1)} MB STL`],
+  ];
+  const out = $("vh-out");
+  out.replaceChildren();
+  for (const [k, v] of rows) {
+    const dt = document.createElement("dt"), dd = document.createElement("dd");
+    dt.textContent = k; dd.textContent = v;
+    out.append(dt, dd);
+  }
+  const warn = $("vh-warn");
+  warn.replaceChildren(...P.warnings.map((w) => { const li = document.createElement("li"); li.textContent = w; return li; }));
+  $("vh-status").textContent = `built in ${Math.round(ms)} ms`;
+  if (view) view.setMesh(mesh);
+}
+function schedule() { clearTimeout(timer); timer = setTimeout(rebuild, 90); }
+
+presetSel.addEventListener("change", () => {
+  const p = VH.PRESETS.find((x) => x.id === presetSel.value);
+  if (p) { $("vh-vialR").value = p.d / 2; $("vh-depth").value = p.depth; }
+  schedule();
+});
+$("vh-form").addEventListener("input", (e) => {
+  if (e.target === presetSel) return;
+  if (e.target.id === "vh-vialR" || e.target.id === "vh-depth") {
+    const p = VH.PRESETS.find((x) => x.id === presetSel.value);
+    if (p && (Number($("vh-vialR").value) !== p.d / 2 || Number($("vh-depth").value) !== p.depth)) presetSel.value = "custom";
+  }
+  schedule();
+});
+$("vh-seg").addEventListener("change", schedule);
+
+function fileStem() {
+  const p = VH.PRESETS.find((x) => x.id === presetSel.value);
+  const tag = p ? p.id : `D${fmt(P.D, 2)}`;
+  return `vial-holder_${P.rows}x${P.cols}_${tag}`;
+}
+function download(data, name, type) {
+  const url = URL.createObjectURL(new Blob([data], { type }));
+  const a = document.createElement("a");
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+$("vh-stl").addEventListener("click", () => {
+  clearTimeout(timer); rebuild();
+  download(VH.toSTL(mesh), fileStem() + ".stl", "model/stl");
+});
+$("vh-scad").addEventListener("click", () => {
+  clearTimeout(timer); rebuild();
+  download(VH.toSCAD(P), fileStem() + ".scad", "text/plain");
+});
+$("vh-view").addEventListener("click", () => view && view.resetView());
+
+rebuild();
+window.vhApp = { get mesh() { return mesh; }, get P() { return P; }, rebuild };
+})();
+</script>
+</body>
+</html>

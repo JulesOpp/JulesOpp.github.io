@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Vial holder mesh checks</title>
+<style>
+  body { font: 13px ui-monospace, Menlo, monospace; margin: 16px; }
+  .pass { color: #0a7a2f; } .fail { color: #c01818; font-weight: bold; }
+</style>
+<h1>Vial holder: mesh checks</h1>
+<p>The code under test is the post's own <code>vh-core</code> script,
+fetched from the post. Each case must be a closed, consistently wound
+2-manifold with the expected genus and volume, and no flat face may be
+folded over.</p>
+<pre id="log"></pre>
+<script id="vh-check">
+"use strict";
+// Returns { ok, msgs } for one mesh built from parameters P.
+function checkMesh(VH, mesh) {
+  const { pos: p, idx, P } = mesh, T = idx.length / 3, msgs = [];
+  // Directed edges: each must occur once, with its reverse once.
+  const nV = p.length / 3, dir = new Map();
+  let degenerate = 0, folded = 0;
+  for (let t = 0; t < T; t++) {
+    const v = [idx[3 * t], idx[3 * t + 1], idx[3 * t + 2]];
+    for (let c = 0; c < 3; c++) {
+      const key = v[c] * nV + v[(c + 1) % 3];
+      dir.set(key, (dir.get(key) || 0) + 1);
+    }
+    const [a, b, c] = v.map((i) => 3 * i);
+    const ux = p[b] - p[a], uy = p[b + 1] - p[a + 1], uz = p[b + 2] - p[a + 2];
+    const wx = p[c] - p[a], wy = p[c + 1] - p[a + 1], wz = p[c + 2] - p[a + 2];
+    const nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx;
+    const area = 0.5 * Math.hypot(nx, ny, nz);
+    if (area < 1e-9) degenerate++;
+    // Flat triangles: the bed face must point down, every other flat
+    // face (top, hole floors) up.
+    if (p[a + 2] === p[b + 2] && p[b + 2] === p[c + 2]) {
+      const want = p[a + 2] === 0 ? -1 : 1;
+      if (Math.sign(nz) !== want) folded++;
+    }
+  }
+  let unpaired = 0, multi = 0;
+  for (const [key, cnt] of dir) {
+    if (cnt > 1) multi++;
+    const a = Math.floor(key / nV), b = key % nV;
+    if (!dir.has(b * nV + a)) unpaired++;
+  }
+  // Every vertex used, Euler characteristic V - E + F = 2 - 2g.
+  const used = new Uint8Array(nV);
+  for (const i of idx) used[i] = 1;
+  const unused = nV - used.reduce((s, x) => s + x, 0);
+  const E = dir.size / 2, chi = nV - E + T;
+  const genus = P.rp > 0 ? P.rows * P.cols : 0;
+  // Volume: rounded box (Steiner formula) minus the polygonal holes.
+  const r = P.rf, a = P.L - 2 * r, b = P.W - 2 * r, c = P.H - 2 * r;
+  const box = a * b * c + 2 * r * (a * b + b * c + c * a) + Math.PI * r * r * (a + b + c) + 4 / 3 * Math.PI * r ** 3;
+  const poly = (rr) => P.seg / 2 * rr * rr * Math.sin(2 * Math.PI / P.seg);
+  const A1 = poly(P.R + P.ch), A2 = poly(P.R);
+  const hole = P.ch / 3 * (A1 + Math.sqrt(A1 * A2) + A2) + A2 * (P.depth - P.ch) + (P.rp > 0 ? poly(P.rp) * P.floor : 0);
+  const want = box - P.rows * P.cols * hole, got = VH.volume(mesh);
+  const relErr = Math.abs(got - want) / want;
+  // Bounding box.
+  let lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < p.length; i += 3) for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], p[i + k]); hi[k] = Math.max(hi[k], p[i + k]); }
+  const bbErr = Math.max(Math.abs(hi[0] - lo[0] - P.L), Math.abs(hi[1] - lo[1] - P.W), Math.abs(hi[2] - lo[2] - P.H), Math.abs(lo[2]));
+
+  if (unpaired) msgs.push(`${unpaired} unpaired edges`);
+  if (multi) msgs.push(`${multi} repeated edges`);
+  if (degenerate) msgs.push(`${degenerate} degenerate triangles`);
+  if (folded) msgs.push(`${folded} folded flat triangles`);
+  if (unused) msgs.push(`${unused} unused vertices`);
+  if (chi !== 2 - 2 * genus) msgs.push(`Euler ${chi}, want ${2 - 2 * genus}`);
+  if (!(relErr < 0.005)) msgs.push(`volume ${got.toFixed(1)} vs ${want.toFixed(1)} (${(100 * relErr).toFixed(2)} %)`);
+  if (bbErr > 1e-6) msgs.push(`bounding box off by ${bbErr.toExponential(2)}`);
+  return { ok: msgs.length === 0, msgs, T, relErr };
+}
+
+// The parameter sweep: every preset, a range of grids, and the corners
+// of the block options (including inputs that get clamped).
+function* cases(VH) {
+  const D = VH.DEFAULTS;
+  for (const pr of VH.PRESETS) for (const [rows, cols] of [[1, 1], [2, 3], [4, 8]])
+    yield { ...D, vialR: pr.d / 2, depth: pr.depth, rows, cols, _name: `${pr.id} ${rows}x${cols}` };
+  for (const [rows, cols] of [[1, 1], [1, 6], [6, 1], [5, 5], [12, 8]])
+    for (const fillet of [0, 1, 3, 99]) for (const chamfer of [0, 1]) for (const pushD of [0, 6]) for (const seg of [32, 64])
+      yield { ...D, rows, cols, fillet, chamfer, pushD, seg, _name: `${rows}x${cols} f${fillet} c${chamfer} p${pushD} s${seg}` };
+  for (const margin of [1.5, 4, 8, 12, 20, 30]) for (const [rows, cols] of [[1, 1], [2, 5], [6, 4]]) for (const fillet of [0, 3, 99])
+    yield { ...D, margin, rows, cols, fillet, pushD: rows === 2 ? 6 : 0, _name: `edge ${margin} ${rows}x${cols} f${fillet}` };
+  // Odd shapes: huge edge wall, thin walls, shallow and tall blocks.
+  yield { ...D, margin: 40, _name: "wide edge" };
+  yield { ...D, margin: 40, rows: 1, cols: 1, fillet: 20, _name: "wide edge 1x1 big fillet" };
+  yield { ...D, wall: 0.8, chamfer: 5, _name: "thin walls" };
+  yield { ...D, depth: 2, floor: 0.6, fillet: 10, chamfer: 3, _name: "shallow" };
+  yield { ...D, depth: 120, floor: 10, fillet: 6, margin: 8, _name: "tall" };
+  yield { ...D, vialR: 1, clearance: 0, rows: 3, cols: 3, pushD: 5, _name: "tiny holes" };
+  yield { ...D, vialR: 50, rows: 2, cols: 2, margin: 10, fillet: 9, pushD: 60, _name: "huge holes" };
+  yield { ...D, rows: "", cols: "x", depth: -3, _name: "bad inputs" };
+}
+
+function runAll(VH, log) {
+  let pass = 0, fail = 0;
+  for (const c of cases(VH)) {
+    const P = VH.normalize(c), mesh = VH.build(P), r = checkMesh(VH, mesh);
+    if (r.ok) pass++; else fail++;
+    log(`${r.ok ? "PASS" : "FAIL"}  ${c._name}  T=${r.T}  dV=${(100 * r.relErr).toFixed(3)}%  ${r.msgs.join("; ")}`, r.ok);
+  }
+  log(`\n${pass} passed, ${fail} failed`, fail === 0);
+  return fail;
+}
+</script>
+<script>
+(async () => {
+  const logEl = document.getElementById("log");
+  const log = (s, ok) => {
+    const span = document.createElement("span");
+    span.className = ok ? "pass" : "fail";
+    span.textContent = s + "\n";
+    logEl.appendChild(span);
+  };
+  const html = await (await fetch("../../blog/vial-holder-generator.html", { cache: "no-store" })).text();
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const VH = new Function(doc.getElementById("vh-core").textContent + "\nreturn VH;")();
+  window.failures = runAll(VH, log);
+})();
+</script>
