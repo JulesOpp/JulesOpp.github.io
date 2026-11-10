@@ -22,6 +22,7 @@ await build({
   minify: true,
   sourcemap: true,
   legalComments: "eof",
+  banner: { js: "/* Superspace Group Finder. Includes moyo-wasm (MIT, (c) 2023 Kohei Shinohara): see moyo_LICENSE.txt */" },
   logLevel: "warning",
 });
 
@@ -29,21 +30,21 @@ const require = createRequire(import.meta.url);
 const pkgDir = dirname(require.resolve("@spglib/moyo-wasm/package.json"));
 copyFileSync(join(pkgDir, "moyo_wasm_bg.wasm"), join(out, "moyo_wasm_bg.wasm"));
 
-// Licence: copy the package's LICENSE file(s) if it ships any; otherwise write a notice
-// from its package.json (moyo-wasm 0.22.0 ships none; it is "MIT OR Apache-2.0").
+// Licence: moyo is MIT OR Apache-2.0; we distribute it under MIT. The npm package
+// ships no LICENSE file, so the MIT text (with its copyright line) is vendored in
+// licenses/moyo-LICENSE-MIT.txt, taken from the spglib/moyo repository at the tag
+// matching the installed version, and shipped next to the wasm.
 const pkg = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8"));
-const licFiles = ["LICENSE", "LICENSE.md", "LICENSE.txt", "LICENSE-MIT", "LICENSE-APACHE", "COPYING"].filter((f) => existsSync(join(pkgDir, f)));
-for (const f of licFiles) copyFileSync(join(pkgDir, f), join(out, `moyo_wasm_${f}${/\.\w+$/.test(f) ? "" : ".txt"}`));
-if (!licFiles.length) {
-  const repo = typeof pkg.repository === "string" ? pkg.repository : pkg.repository?.url ?? "";
-  writeFileSync(
-    join(out, "moyo_wasm_NOTICE.txt"),
-    `moyo_wasm_bg.wasm and the moyo-wasm JavaScript bindings bundled in ssgf.js are\n` +
-      `${pkg.name} ${pkg.version}, part of the spglib project's moyo library.\n` +
-      `License: ${pkg.license}\nSource: ${repo.replace(/^git\+/, "").replace(/\.git$/, "")}\n` +
-      `The npm package ships no separate LICENSE file; see the repository for the licence texts.\n`,
-  );
-}
+const MOYO_LICENSED_VERSION = "0.22.0";
+if (pkg.version !== MOYO_LICENSED_VERSION)
+  throw new Error(`@spglib/moyo-wasm is ${pkg.version}; refresh licenses/moyo-LICENSE-MIT.txt from the v${pkg.version} tag and update MOYO_LICENSED_VERSION`);
+const mit = readFileSync(join(here, "licenses", "moyo-LICENSE-MIT.txt"), "utf8");
+writeFileSync(
+  join(out, "moyo_LICENSE.txt"),
+  `moyo_wasm_bg.wasm and the moyo-wasm JavaScript bindings bundled in ssgf.js are\n` +
+    `${pkg.name} ${pkg.version} (https://github.com/spglib/moyo), dual-licensed\n` +
+    `MIT OR Apache-2.0, distributed here under the MIT licence:\n\n` + mit,
+);
 
 const kb = (f) => (statSync(join(out, f)).size / 1024).toFixed(1) + " KB";
 console.log(`ssgf.js ${kb("ssgf.js")}, moyo_wasm_bg.wasm ${kb("moyo_wasm_bg.wasm")} → ${out}`);
