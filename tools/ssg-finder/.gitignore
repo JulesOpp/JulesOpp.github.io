@@ -1,0 +1,6 @@
+# BYU ISO(3+d)D data must never be committed or published (decision D1, 2026-11-10)
+local/
+node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/

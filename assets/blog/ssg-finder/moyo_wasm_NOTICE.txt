@@ -1,0 +1,5 @@
+moyo_wasm_bg.wasm and the moyo-wasm JavaScript bindings bundled in ssgf.js are
+@spglib/moyo-wasm 0.22.0, part of the spglib project's moyo library.
+License: MIT OR Apache-2.0
+Source: https://github.com/spglib/moyo
+The npm package ships no separate LICENSE file; see the repository for the licence texts.

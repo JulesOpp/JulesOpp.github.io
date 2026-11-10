@@ -1,0 +1,21 @@
+{
+  "name": "ssg-finder",
+  "private": true,
+  "type": "module",
+  "description": "Superspace group finder: 3D space groups of commensurate sections of (3+d)D superspace groups",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@spglib/moyo-wasm": "0.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "esbuild": "^0.25.0",
+    "fast-check": "^4.0.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  }
+}

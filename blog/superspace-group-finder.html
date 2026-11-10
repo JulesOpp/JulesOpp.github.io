@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Superspace Group Finder · Julius Oppenheim</title>
+  <meta name="description" content="Find the 3D space groups of commensurate sections of a (3+d)D superspace group, for d = 1, 2 and 3, in the browser">
+  <link rel="stylesheet" href="../assets/style.css">
+  <link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+  <script src="../assets/theme.js"></script>
+<style>
+/* Superspace Group Finder. Colours come from the site tokens; the two
+   warning colours are local and follow the same light/dark pattern. */
+:root { --ssgf-warn: #8a4500; --ssgf-warn-bg: #fff6e8; --ssgf-err: #b42318; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ssgf-warn: #f3b562; --ssgf-warn-bg: #2b2215; --ssgf-err: #ff8a80; }
+}
+:root[data-theme="dark"] { --ssgf-warn: #f3b562; --ssgf-warn-bg: #2b2215; --ssgf-err: #ff8a80; }
+
+.ssgf { margin: 1.5rem 0 2rem; min-width: 0; }
+.ssgf fieldset { border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 1rem; padding: 0.75rem 1rem 1rem; min-width: 0; }
+.ssgf legend { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); padding: 0 0.4rem; }
+.ssgf p { margin: 0.4rem 0; }
+.ssgf label { font-size: 0.92rem; }
+.ssgf input[type="text"], .ssgf textarea {
+  font: 0.88rem var(--mono); color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 6px; padding: 0.3rem 0.45rem; max-width: 100%; }
+.ssgf input[type="text"]:focus, .ssgf textarea:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: var(--accent); }
+.ssgf input[aria-invalid="true"] { border-color: var(--ssgf-err); }
+.ssgf textarea { display: block; width: 100%; min-height: 7rem; resize: vertical; font-size: 0.8rem; }
+.ssgf button { font: inherit; font-size: 0.9rem; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 6px; padding: 0.3rem 0.75rem; cursor: pointer; }
+.ssgf button:hover { border-color: var(--accent); }
+.ssgf button.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.ssgf button:disabled { opacity: 0.5; cursor: default; }
+.ssgf .row { display: flex; flex-wrap: wrap; gap: 0.5rem 0.75rem; align-items: center; margin: 0.4rem 0; }
+.ssgf #ssgf-label { width: 11rem; }
+.ssgf form[hidden], .ssgf [hidden] { display: none !important; }
+.ssgf .mono { font-family: var(--mono); font-size: 0.86em; }
+.ssgf .muted, .ssgf .note { color: var(--muted); }
+.ssgf .nw { white-space: nowrap; }
+.ssgf .err { color: var(--ssgf-err); }
+.ssgf-msg { font-size: 0.9rem; min-height: 1.4em; color: var(--muted); }
+.ssgf-msg.err { color: var(--ssgf-err); }
+.ssgf-dl, .ssgf-group { margin: 0.5rem 0 0; display: grid; gap: 0.2rem; font-size: 0.9rem; }
+.ssgf-dl > div, .ssgf-group > div { display: grid; grid-template-columns: 11rem minmax(0, 1fr); gap: 0 0.75rem; }
+.ssgf-dl dt, .ssgf-group dt { color: var(--muted); }
+.ssgf-dl dd, .ssgf-group dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.ssgf-prow { display: grid; grid-template-columns: 9rem 8rem minmax(0, 1fr); gap: 0.25rem 0.75rem; align-items: center; margin: 0.35rem 0; }
+.ssgf-prow input { width: 100%; }
+.ssgf-perr { font-size: 0.82rem; color: var(--ssgf-err); }
+.ssgf-spin { display: inline-block; width: 0.9em; height: 0.9em; vertical-align: -0.1em; border: 2px solid var(--line);
+  border-top-color: var(--accent); border-radius: 50%; animation: ssgf-spin 0.8s linear infinite; }
+@keyframes ssgf-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ssgf-spin { animation-duration: 3s; } }
+.ssgf-warn { border: 1px solid var(--ssgf-warn); background: var(--ssgf-warn-bg); color: var(--ssgf-warn);
+  border-radius: 6px; padding: 0.6rem 0.9rem; margin: 0.75rem 0; font-size: 0.92rem; }
+.ssgf-warn ul { margin: 0.25rem 0 0; padding-left: 1.2rem; }
+.ssgf-head { font-size: 0.92rem; overflow-wrap: anywhere; }
+.ssgf-sum { max-height: none; margin: 0.75rem 0; }
+.ssgf-sum th[scope="row"] { position: sticky; left: 0; background: var(--bg-soft); font-weight: 600; white-space: nowrap; }
+.ssgf-sum td { vertical-align: top; }
+.ssgf-sum td.lw { white-space: normal; min-width: 9rem; max-width: 16rem; }
+.ssgf table .sym, .ssgf .sym { font-family: "Times New Roman", Times, serif; font-style: italic; font-size: 1.05em; white-space: nowrap; }
+.ssgf .sym sub { font-style: normal; }
+.ssgf .ovl { text-decoration: overline; }
+.ssgf-actions { margin: 0.5rem 0 1rem; }
+.ssgf-card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); box-shadow: var(--shadow);
+  padding: 0.75rem 1rem; margin: 0.9rem 0; min-width: 0; }
+.ssgf-card h3 { margin: 0 0 0.4rem; color: var(--fg); font-size: 1.05rem; }
+.ssgf-card details { margin: 0.6rem 0 0; }
+.ssgf-card summary { font-size: 0.9rem; }
+.ssgf-card pre { font-size: 0.8rem; margin: 0.5rem 0; }
+.ssgf-card .table-scroll { max-height: 20rem; }
+.eqn { overflow-x: auto; }
+@media (max-width: 640px) {
+  .ssgf fieldset { padding: 0.6rem 0.7rem 0.8rem; }
+  .ssgf-dl > div, .ssgf-group > div { grid-template-columns: minmax(0, 1fr); }
+  .ssgf-prow { grid-template-columns: 6rem minmax(0, 1fr); }
+  .ssgf-perr { grid-column: 1 / -1; }
+  .ssgf-card { padding: 0.65rem 0.75rem; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap">
+    <a class="site-name" href="../index.html">Julius Oppenheim</a>
+    <nav class="site-nav" aria-label="Main">
+      <a href="../index.html">Home</a>
+      <a href="../publications.html">Publications</a>
+      <a href="../software.html">Software</a>
+      <a href="../water-database.html">Water Database</a>
+      <a href="../blog/index.html" aria-current="page">Blog</a>
+      <a href="../cv.html">CV</a>
+      <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light and dark mode" hidden><svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v2.5M12 20v2.5M1.5 12H4M20 12h2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8"/></svg><svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"/></svg></button>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+    <article class="prose">
+    <h1>Superspace Group Finder</h1>
+    <p class="date"><time datetime="2026-11-10">November 10, 2026</time></p>
+    <p>A commensurately modulated crystal is described by a (3+d)D superspace
+    group with rational modulation vectors q. Its actual symmetry is an ordinary
+    3D space group, which depends on the phase t₀ of the modulation. This tool
+    lists every 3D space group a superspace group can give for your rational q,
+    with the set of t₀ (a general position, planes, lines or points) where each
+    one occurs.</p>
+    <p>The IUCr <i>Superspace Group Finder</i> does this for (3+1)D groups. As far
+    as I know there is no tool for d = 2 and 3, which is where I needed one. This
+    page handles d = 1, 2 and 3, with exact rational arithmetic throughout.</p>
+    <p><b>How to use it.</b> The superspace-group tables belong to the ISO(3+d)D
+    project at BYU and are not distributed with this page. Instead you bring the
+    group yourself:</p>
+    <ol>
+      <li>Type the group's label (e.g. <code>62.1.9.2</code>) and press
+      <i>Open BYU page</i>. Your browser opens the group's page on iso.byu.edu.</li>
+      <li>On that page, select everything (Cmd-A or Ctrl-A), copy it, and paste it
+      into the box below.</li>
+      <li>Enter rational values for the free parameters of the q-vectors and press
+      <i>Find space groups</i>.</li>
+    </ol>
+    <p>Everything runs in your browser. Your browser remembers the last page you
+    pasted for each group, so a permalink to a result works again later on the
+    same browser.</p>
+    </article>
+
+    <section class="ssgf" id="ssgf" aria-label="Superspace group finder">
+      <fieldset>
+        <legend>1 · Group</legend>
+        <div class="row">
+          <label for="ssgf-label">Superspace group label</label>
+          <input id="ssgf-label" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. 62.1.9.2" aria-describedby="ssgf-byu-note">
+          <form id="ssgf-byu" method="post" action="https://iso.byu.edu/ssginfoform.php" target="_blank" hidden>
+            <input type="hidden" name="label" id="ssgf-byu-label" value="">
+            <input type="hidden" name="notation" value="xyzt">
+            <input type="hidden" name="supercenter" value="true">
+            <button type="submit">Open BYU page ↗</button>
+          </form>
+          <span class="note" id="ssgf-byu-note">Labels look like 62.1.9.2 (ISO(3+d)D numbering).</span>
+        </div>
+        <label for="ssgf-paste">Paste the whole BYU group page here</label>
+        <textarea id="ssgf-paste" spellcheck="false" autocomplete="off" aria-describedby="ssgf-paste-status" placeholder="Superspace group: 62.1.9.2 Pnma(0,0,g)0s0 …"></textarea>
+        <p class="ssgf-msg" id="ssgf-paste-status" aria-live="polite"></p>
+        <dl class="ssgf-group" id="ssgf-group" hidden></dl>
+      </fieldset>
+
+      <form id="ssgf-pform" novalidate hidden>
+        <fieldset>
+          <legend>2 · Parameters</legend>
+          <p class="note">Rational values: 1/4, -3/8 or 0.125.</p>
+          <div id="ssgf-params"></div>
+          <div class="row">
+            <button type="submit" class="primary" id="ssgf-run">Find space groups</button>
+            <span class="ssgf-msg" id="ssgf-run-status" aria-live="polite"></span>
+            <a id="ssgf-permalink" href="#" hidden>Permalink</a>
+          </div>
+        </fieldset>
+      </form>
+
+      <div id="ssgf-results" aria-live="polite"></div>
+      <noscript><p>This tool needs JavaScript and WebAssembly.</p></noscript>
+    </section>
+
+    <article class="prose">
+    <h2>Method</h2>
+    <p>Write a superspace operation as g = (R, ε, M; τ<sub>E</sub>, τ<sub>I</sub>),
+    with R its 3D rotation, ε its d×d action on the internal coordinates,
+    and M + εQ = QR, where the rows of Q are the q-vectors. The section of the
+    superspace crystal at phase t₀ is a 3D crystal, and g gives one of its
+    symmetries, combined with the basic lattice translation n, exactly when</p>
+    <div class="eqn">
+    <math display="block"><mrow><mo>(</mo><mi>ε</mi><mo>−</mo><mn>1</mn><mo>)</mo><msub><mi>t</mi><mn>0</mn></msub><mo>+</mo><msub><mi>τ</mi><mi>I</mi></msub><mo>−</mo><mi>Q</mi><mo>(</mo><msub><mi>τ</mi><mi>E</mi></msub><mo>+</mo><mi>n</mi><mo>)</mo><mo>∈</mo><msup><mi mathvariant="double-struck">Z</mi><mi>d</mi></msup></mrow></math>
+    </div>
+    <p>for some n ∈ Z³. Since t₀ is only defined up to an origin shift, it lives on
+    the torus R<sup>d</sup>/Λ with Λ = Z<sup>d</sup> + QZ³. In a basis of Λ every
+    survival condition becomes an integer congruence, which the Smith normal form
+    solves exactly as a finite union of connected flats (affine subtori). Closing
+    these flats under intersection gives every distinct set of surviving
+    operations; each class is a flat minus its sub-flats, and classes related by
+    the superspace group itself are merged into one row. The loci are printed as
+    congruences in t (e.g. <code>t3 ≡ 1/8 (mod 1/4)</code>).</p>
+    <p>For each class the surviving operations, at an exact generic point, give the
+    3D operations in the conventional supercell N₁a × N₂b × N₃c. The space-group
+    type, Hall number and transformation to the standard setting come from
+    <a href="https://github.com/spglib/moyo">moyo</a> (compiled to WebAssembly),
+    applied to a pseudo-structure with exactly that symmetry. A count check
+    flags any failed identification instead of reporting a guess. The symbol in
+    the axes of the superspace group, as the IT finder prints it, is worked out
+    separately from the operations.</p>
+
+    <h2>Limitations</h2>
+    <ul>
+      <li>Rows are merged only by the superspace group itself, not by its
+      normaliser. Sections that are different crystals with the same description
+      (for example different origin choices of the basic group) appear as
+      separate rows, as in the IT finder.</li>
+      <li>Magnetic superspace groups are not handled.</li>
+      <li>The symbol in superspace-group axes uses orthogonal symmetry directions,
+      so it is less reliable for hexagonal and trigonal groups; the standard symbol
+      and number from moyo are not affected.</li>
+      <li>The conventional supercell is limited to two million basic cells.</li>
+    </ul>
+
+    <h2>Credits and references</h2>
+    <ul>
+      <li>H. T. Stokes, D. M. Hatch and B. J. Campbell, ISO(3+d)D, ISOTROPY Software
+      Suite, <a href="https://iso.byu.edu">iso.byu.edu</a>. The superspace-group
+      data you paste comes from here.</li>
+      <li>H. T. Stokes, B. J. Campbell and S. van Smaalen, Generation of
+      (3+d)-dimensional superspace groups for describing the symmetry of modulated
+      crystalline structures, <i>Acta Cryst.</i> A<b>67</b>, 45–55 (2011),
+      <a href="https://doi.org/10.1107/S0108767310042297">doi:10.1107/S0108767310042297</a>.</li>
+      <li>S. van Smaalen, B. J. Campbell and H. T. Stokes, Equivalence of
+      superspace groups, <i>Acta Cryst.</i> A<b>69</b>, 75–90 (2013),
+      <a href="https://doi.org/10.1107/S0108767312041657">doi:10.1107/S0108767312041657</a>.</li>
+      <li><a href="https://github.com/spglib/moyo">moyo</a>, from the spglib
+      project (MIT / Apache-2.0), for space-group identification; see
+      <a href="../assets/blog/ssg-finder/moyo_wasm_NOTICE.txt">the licence notice</a>.</li>
+      <li>I. Orlov, L. Palatinus and G. Chapuis, the IUCr IT <i>Superspace Group
+      Finder</i> for (3+1)D groups, used as the reference to validate the d = 1
+      results.</li>
+    </ul>
+    <p><a href="../blog/index.html">← All posts</a></p>
+    </article>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <nav aria-label="Profiles">
+        <a href="mailto:juliuso@princeton.edu">Email</a>
+        <span>·</span>
+        <a href="https://scholar.google.com/citations?user=2yNJuKkAAAAJ&amp;hl=en">Google Scholar</a>
+        <span>·</span>
+        <a href="https://orcid.org/0000-0002-5988-0677">ORCID</a>
+        <span>·</span>
+        <a href="https://www.linkedin.com/in/julius-oppenheim-a59779283/">LinkedIn</a>
+        <span>·</span>
+        <a href="https://github.com/JulesOpp">GitHub</a>
+        <span>·</span>
+        <a href="https://bsky.app/profile/jules-oppenheim.bsky.social">Bluesky</a>
+    </nav>
+    <p>© 2026 Julius Oppenheim</p>
+  </div>
+</footer>
+
+<script type="module" src="../assets/blog/ssg-finder/ssgf.js"></script>
+</body>
+</html>
