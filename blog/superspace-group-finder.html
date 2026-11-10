@@ -104,18 +104,16 @@
     <article class="prose">
     <h1>Superspace Group Finder</h1>
     <p class="date"><time datetime="2026-11-10">November 10, 2026</time></p>
-    <p>A commensurately modulated crystal is described by a (3+d)D superspace
-    group with rational modulation vectors q. Its actual symmetry is an ordinary
-    3D space group, which depends on the phase t₀ of the modulation. This tool
-    lists every 3D space group a superspace group can give for your rational q,
-    with the set of t₀ (a general position, planes, lines or points) where each
-    one occurs.</p>
-    <p>The IUCr <i>Superspace Group Finder</i> does this for (3+1)D groups. As far
-    as I know there is no tool for d = 2 and 3, which is where I needed one. This
-    page handles d = 1, 2 and 3, with exact rational arithmetic throughout.</p>
-    <p><b>How to use it.</b> The superspace-group tables belong to the ISO(3+d)D
-    project at BYU and are not distributed with this page. Instead you bring the
-    group yourself:</p>
+    <p>This page is used for descending (3+d)D superspace groups with rational
+    modulation vectors and a set phase t₀ to their corresponding 3D space group.
+    This follows the (3+1)D to 3D <a href="https://it.iucr.org/resources/finder/">Superspace
+    Group Finder</a> written by Orlov, Schoeni, and Chapuis and utilizes the
+    enumeration of superspace groups from the
+    <a href="https://iso.byu.edu/ssg.php">ISO(3+d)D project at BYU</a>. This page
+    extends to (3+d)D descent for d = 2 and 3.</p>
+    <p><b>How to use.</b> The superspace-group tables belong to the ISO(3+d)D
+    project at BYU and are not distributed with this page. Instead you copy over
+    the information yourself:</p>
     <ol>
       <li>Type the group's label (e.g. <code>62.1.9.2</code>) and press
       <i>Open BYU page</i>. Your browser opens the group's page on iso.byu.edu.</li>
@@ -124,7 +122,7 @@
       <li>Enter rational values for the free parameters of the q-vectors and press
       <i>Find space groups</i>.</li>
     </ol>
-    <p>Everything runs in your browser. Your browser remembers the last page you
+    <p>Everything is run locally. Your browser will remember the last page you
     pasted for each group, so a permalink to a result works again later on the
     same browser.</p>
     </article>
@@ -221,9 +219,12 @@
       <li><a href="https://github.com/spglib/moyo">moyo</a>, from the spglib
       project (MIT / Apache-2.0), for space-group identification; see
       <a href="../assets/blog/ssg-finder/moyo_LICENSE.txt">its licence</a>.</li>
-      <li>I. Orlov, L. Palatinus and G. Chapuis, the IUCr IT <i>Superspace Group
-      Finder</i> for (3+1)D groups, used as the reference to validate the d = 1
-      results.</li>
+      <li>I. Orlov (concept and content), N. Schoeni (programming) and
+      G. Chapuis (project review), <a href="https://it.iucr.org/resources/finder/"><i>Superspace
+      Group Finder</i></a>, Laboratoire de Cristallographie, EPFL, provided via
+      International Tables for Crystallography; derived with JANA2000
+      (V. Petříček, M. Dušek and L. Palatinus). Used as the reference to validate
+      the d = 1 results.</li>
     </ul>
     <p><a href="../blog/index.html">← All posts</a></p>
     </article>
