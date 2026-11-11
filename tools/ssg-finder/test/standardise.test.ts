@@ -1,7 +1,8 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { Q } from "../src/rational";
+import { matInv, Q } from "../src/rational";
+import { ssgSymbolInAxes } from "../src/ssgsymbol";
 import { buildOps, GroupRecord, paramsOf, parseLinear, splitOp, type SOp } from "../src/ssg";
 import { loadMoyo } from "../src/moyo";
 import { tSubgroups } from "../src/subgroups";
@@ -42,13 +43,23 @@ describe("standardise (public)", () => {
     }
   });
   it("the returned map takes the operations into the reported setting", () => {
-    const cls = tSubgroups(P3c1).find((c) => c.index === 3)!;
-    const r = standardise(cls.ops, P3c1.q);
-    if (!isOk(r)) throw new Error("not ok");
-    const S = transformOps(cls.ops, r.P.map((row) => row.map(Q.parse)), r.p.map(Q.parse), r.eta, r.m.map((x) => Q.of(x)), Q.parse(r.p4));
-    expect(S).not.toBeNull();
-    const again = standardise(S!, [r.qActual]);
-    expect(isOk(again) && again.symbol).toEqual(r.symbol);
+    for (const cls of tSubgroups(P3c1)) {
+      const r = standardise(cls.ops, P3c1.q);
+      if (!isOk(r)) throw new Error("not ok");
+      const S = transformOps(cls.ops, r.P.map((row) => row.map(Q.parse)), r.p.map(Q.parse), r.eta, r.m.map((x) => Q.of(x)), Q.parse(r.p4));
+      expect(S).not.toBeNull();
+      // independent of standardise: symbol of the transformed operations in the reported q family
+      const sym = ssgSymbolInAxes(S!, [r.symbol.q.replace(/[()]/g, "")], crystalSystemOf(r.sgNumber));
+      expect(sym?.full).toBe(r.symbol.full);
+      // the transformed q (the group's q is (0,0,g), i.e. the column (0,0,1) of the lattice dual) is qActual
+      const q = P3c1.q[0].split(",").map((x) => parseLinear(x, ["g"]));
+      const Pm = r.P.map((row) => row.map(Q.parse));
+      const Pi = matInv(Pm);
+      const qNew = [0, 1, 2].map((j) => [0, 1, 2].reduce((s, i) => s.add(q[i].coef[0].mulInt(r.eta).mul(Pi[i][j])), Q.ZERO));
+      const mm = r.m.map((x) => Q.of(x));
+      const mp = [0, 1, 2].map((j) => [0, 1, 2].reduce((s, i) => s.add(mm[i].mul(Pi[i][j])), Q.ZERO));
+      expect(formatQ(qNew.map((c, i) => ({ coef: [c], c: mp[i] })), ["g"])).toBe(r.qActual);
+    }
   });
   it("refuses d != 1", () => {
     const ops = buildOps({ ...P3c1, d: 2, gen: ["y,-x+y,-z,-t,-u"] });
@@ -205,6 +216,7 @@ describe.skipIf(!have)("standardise vs the BYU (3+1)D tables (local-only)", () =
         if (!v.ok) bad.push(`${sg}\t${r.label}\t${r.sym}\t(q ${q})\tgot ${v.got}`);
       }
     }
+    expect(viaAlt).toBe(102);
     console.log(`(a) ${n} cases, BYU name is an alternate (not the primary) in ${viaAlt}`);
     expect(bad, report(bad, n)).toEqual([]);
   });
@@ -231,6 +243,7 @@ describe.skipIf(!have)("standardise vs the BYU (3+1)D tables (local-only)", () =
       }
     }
     expect(n).toBe(8204);
+    expect(viaAlt).toBe(67);
     console.log(`(b) ${n} cases, BYU name is an alternate (not the primary) in ${viaAlt}`);
     expect(bad, report(bad, n)).toEqual([]);
   });

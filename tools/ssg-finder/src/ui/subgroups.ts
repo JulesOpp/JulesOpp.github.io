@@ -40,6 +40,7 @@ const elResults = $("ssgs-results");
 
 interface State {
   parent: GroupRecord;
+  parentSgNumber: number;
   name: string;
   rows: SubRow[];
   warnings: string[];
@@ -129,7 +130,7 @@ async function run(): Promise<void> {
   try {
     const parent = parseByuPage(elPaste.value);
     const out = runSubgroups(elPaste.value, { kIndex: Number(elK.value) });
-    state = { parent, name: out.parent, rows: out.rows, warnings: out.warnings, ms: performance.now() - t0 };
+    state = { parent, parentSgNumber: out.parentSgNumber, name: out.parent, rows: out.rows, warnings: out.warnings, ms: performance.now() - t0 };
   } catch (e) {
     state = null;
     elResults.innerHTML = "";
@@ -234,7 +235,7 @@ elResults.addEventListener("click", (e) => {
   if (a && state) {
     const row = state.rows[Number(a.dataset.send)];
     try {
-      sessionStorage.setItem(SEND_KEY, JSON.stringify(subgroupRecord(state.parent, row)));
+      sessionStorage.setItem(SEND_KEY, JSON.stringify(subgroupRecord(state.parent, row, state.parentSgNumber)));
     } catch {
       e.preventDefault();
       const note = a.nextElementSibling as HTMLElement | null;

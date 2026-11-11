@@ -25,24 +25,33 @@ describe("affineText", () => {
 
 describe("send to finder", () => {
   let parent: ReturnType<typeof parseByuPage>;
+  let parentSg: number;
   let rows: ReturnType<typeof runSubgroups>["rows"];
   beforeAll(() => {
     parent = parseByuPage(P3C1);
-    rows = runSubgroups(P3C1, { kIndex: 1 }).rows;
+    const out = runSubgroups(P3C1, { kIndex: 1 });
+    rows = out.rows;
+    parentSg = out.parentSgNumber;
   });
   it("round-trips the P321 subgroup through JSON and runs in the finder", () => {
     const row = rows.find((r) => r.sgNumber === 150)!;
-    const rec = subgroupRecord(parent, row);
+    const rec = subgroupRecord(parent, row, parentSg);
     expect(rec.label).toBeUndefined();
-    expect(rec.sgNumber).toBe(150);
+    expect(parentSg).toBe(165);
+    expect(rec.sgNumber).toBe(165); // the parent's axes, not the P321 type's
     expect(rec.nops).toBe(6);
     const back = decodeSent(JSON.stringify(rec));
     expect(back).toEqual(rec);
     const out = compute(back!, { g: "1/3" });
     expect(out.ok).toBe(true);
   });
+  it("the P-3c1 parent row keeps the identity map", () => {
+    const parentRow = rows.find((r) => r.index === 1)!;
+    expect(parentRow.sgNumber).toBe(165);
+    expect(affineText(parentRow.type!)).toBe("(x, y, z; t)");
+  });
   it("P1 subgroup (no generators) is valid", () => {
-    const rec = subgroupRecord(parent, rows.find((r) => r.sgNumber === 1)!);
+    const rec = subgroupRecord(parent, rows.find((r) => r.sgNumber === 1)!, parentSg);
     expect(rec.gen).toEqual([]);
     expect(decodeSent(JSON.stringify(rec))!.nops).toBe(1);
   });

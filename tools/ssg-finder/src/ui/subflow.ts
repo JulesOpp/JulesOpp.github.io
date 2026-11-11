@@ -39,7 +39,7 @@ export function affineText(t: Pick<Standardised, "P" | "p" | "eta" | "m" | "p4">
 }
 
 /** The subgroup as a finder record: the parent's lattice, q and centrings, the subgroup's operators (parent axes). */
-export function subgroupRecord(parent: GroupRecord, row: SubRow): GroupRecord {
+export function subgroupRecord(parent: GroupRecord, row: SubRow, parentSgNumber: number): GroupRecord {
   const name = row.inParentAxes ?? (row.type ? row.type.symbol.full : "subgroup");
   const rec: GroupRecord = {
     sym: `${name} < ${parent.sym}`,
@@ -50,7 +50,9 @@ export function subgroupRecord(parent: GroupRecord, row: SubRow): GroupRecord {
     cen: [...parent.cen],
     gen: [...row.generators],
   };
-  if (row.type) rec.sgNumber = row.type.sgNumber;
+  // The operators are written in the PARENT's axes, so the finder must pick the crystal system
+  // of those axes (the parent's space-group number), not that of the subgroup's own type.
+  rec.sgNumber = parentSgNumber;
   rec.nops = buildOps(rec).length;
   return rec;
 }

@@ -66,13 +66,14 @@ function generatorsOf(rec: GroupRecord, ops: SOp[]): string[] {
   return gens;
 }
 
-export function runSubgroups(raw: string, f: SubFilter): { parent: string; rows: SubRow[]; warnings: string[] } {
+export function runSubgroups(raw: string, f: SubFilter): { parent: string; parentSgNumber: number; rows: SubRow[]; warnings: string[] } {
   const rec = parseByuPage(raw);
   if (rec.d !== 1) throw new SubgroupError("only d = 1 is supported for now");
   if (f.kIndex !== 1) throw new SubgroupError("only k-index 1 is supported for now");
 
   const warnings: string[] = [];
-  const parentSystem = crystalSystemOf(parentNumber(rec));
+  const parentSgNumber = parentNumber(rec);
+  const parentSystem = crystalSystemOf(parentSgNumber);
   const rows: SubRow[] = [];
   for (const c of tSubgroups(rec)) {
     const st = standardise(c.ops, rec.q);
@@ -103,7 +104,7 @@ export function runSubgroups(raw: string, f: SubFilter): { parent: string; rows:
       generators: generatorsOf(rec, c.ops),
     });
   }
-  return { parent: rec.sym, rows: rows.filter((r) => keep(r, f)), warnings };
+  return { parent: rec.sym, parentSgNumber, rows: rows.filter((r) => keep(r, f)), warnings };
 }
 
 /** Filter test. Rows whose type could not be identified always pass (they carry a warning). */

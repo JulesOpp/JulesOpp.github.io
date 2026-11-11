@@ -260,8 +260,8 @@ interface NormEl {
 const normCache = new Map<string, NormEl[]>();
 
 /** Elements (N, n) of the affine normaliser of g: N from SMALL, one per coset N.K; all n mod L. */
-function normaliser(g: Group3, onlyIdentity: boolean): NormEl[] {
-  const key = (onlyIdentity ? "1|" : "") + g.reps.map((o) => mkey(o.R) + ":" + vkey(o.t)).sort().join(" ") + "|" + g.cents.map(vkey).sort().join(" ");
+function normaliser(g: Group3, onlyIdentity: boolean, T: QMat): NormEl[] {
+  const key = T.map((r) => r.map(String).join(",")).join(";") + "|" + (onlyIdentity ? "1|" : "") + g.reps.map((o) => mkey(o.R) + ":" + vkey(o.t)).sort().join(" ") + "|" + g.cents.map(vkey).sort().join(" ");
   const hit = normCache.get(key);
   if (hit) return hit;
   const Kset = new Map(g.reps.map((o) => [mkey(o.R), o]));
@@ -270,8 +270,18 @@ function normaliser(g: Group3, onlyIdentity: boolean): NormEl[] {
   const BpT = Bp[0].map((_, j) => Bp.map((r) => r[j])); // x = BpT y
   const BpTi = matInv(BpT);
   const out: NormEl[] = [];
-  const seenCosets = new Set<string>();
   const cands = onlyIdentity ? [[[1, 0, 0], [0, 1, 0], [0, 0, 1]]] : SMALL;
+  // Each coset N.K is represented by its simplest member (identity first, then fewest off-diagonal
+  // entries, then fewest minus signs); cosets keep the order in which SMALL first meets them.
+  // Simplicity is judged on the map N.T that is actually applied to the given axes (T: given -> standard).
+  const cost = (N: number[][]) => {
+    const M = matMul(qmat(N), T);
+    let off = 0, neg = 0;
+    M.forEach((r, i) => r.forEach((x, j) => { if (i !== j && !x.isZero()) off++; if (i === j && x.isZero()) off++; if (x.n < 0n) neg++; }));
+    return off * 100 + neg;
+  };
+  const repOf = new Map<string, number[][]>();
+  const order: string[] = [];
   for (const N of cands) {
     const Ni = iinv(N);
     let ok = true;
@@ -281,7 +291,14 @@ function normaliser(g: Group3, onlyIdentity: boolean): NormEl[] {
     for (const c of g.cents) if (!cenSet.has(vkey(mv(Nq, c).map((x) => x.mod1())))) { ok = false; break; }
     if (!ok) continue;
     const coset = g.reps.map((o) => mkey(imul(N, o.R))).sort().join(" ");
-    if (seenCosets.has(coset)) continue;
+    const cur = repOf.get(coset);
+    if (!cur) order.push(coset);
+    if (!cur || cost(N) < cost(cur)) repOf.set(coset, N);
+  }
+  for (const coset of order) {
+    const N = repOf.get(coset)!;
+    const Ni = iinv(N);
+    const Nq = qmat(N);
     // translations: (I - R') n = t_target(R') - N t  (mod L), in primitive coordinates y
     const A: IMat = [];
     const b: Q[] = [];
@@ -297,7 +314,6 @@ function normaliser(g: Group3, onlyIdentity: boolean): NormEl[] {
     }
     const sols = solveMod1(A, b);
     if (!sols.length) continue;
-    seenCosets.add(coset);
     const seenN = new Set<string>();
     for (const y of sols) {
       const n = mv(BpT, y).map((x) => x.mod1());
@@ -377,6 +393,15 @@ interface Candidate {
   qActual: string;
 }
 
+/** Complexity of the affine map (smaller is simpler): identity first, then fewest non-zero and negative entries. */
+function mapCost(c: Candidate): number {
+  const nzv = (v: Q[]) => v.filter((x) => !x.isZero()).length;
+  const offP = c.P.reduce((s, r, i) => s + r.filter((x, j) => i !== j && !x.isZero()).length, 0);
+  const negP = c.P.reduce((s, r) => s + r.filter((x) => x.n < 0n).length, 0);
+  const diagP = c.P.reduce((s, r, i) => s + (r[i].isZero() ? 1 : 0), 0);
+  return (offP + diagP) * 1e6 + negP * 1e4 + nzv(c.p) * 100 + nzv(c.m) * 10 + (c.eta === 1 ? 0 : 1);
+}
+
 /** All candidate BYU-axes forms of the group (exported for tests/debugging). */
 export function candidates(ops: SOp[], Qtext: string[]): { sgNumber: number; list: Candidate[] } | { ok: false; reason: string } {
   if (Qtext.length !== 1 || ops.some((o) => o.W.length !== 4)) return { ok: false, reason: "only d = 1 is supported for now" };
@@ -422,10 +447,10 @@ export function candidates(ops: SOp[], Qtext: string[]): { sgNumber: number; lis
       }
   }
   const g: Group3 = { reps: [...reps.values()], cents: [...centSet.values()] };
-  const norm = normaliser(g, system === "triclinic");
+  const norm = normaliser(g, system === "triclinic", T);
 
   const list: Candidate[] = [];
-  const seen = new Set<string>();
+  const seen = new Map<string, number>();
   const symbols = new Map<string, SsgSymbol | null>();
   B_SETTINGS[system].forEach((Bn, bIndex) => {
     const B = qmat(Bn);
@@ -459,14 +484,21 @@ export function candidates(ops: SOp[], Qtext: string[]): { sgNumber: number; lis
             const newOps = k.every((x) => x === 0) ? base : transformOps(ops, P, p, eta, m, Z);
             // BYU convention: no centring translation involves the internal coordinate
             if (!newOps || newOps.some((o) => isIdW(o.W) && !o.w[3].isZero())) continue;
-            const key = form + "#" + newOps.map(opKey).join(" ");
+            const key = form + "#" + newOps.map(opKey).sort().join(" "); // the operation set, order-independent
             if (!symbols.has(key)) symbols.set(key, ssgSymbolInAxes(newOps, [form], system));
             const symbol = symbols.get(key);
             if (!symbol) continue;
             const qActual = formatQ(q0.map((l, i) => ({ coef: l.coef, c: l.c.add(mp[i]) })), names);
-            if (seen.has(key + "#" + qActual)) continue;
-            seen.add(key + "#" + qActual);
-            list.push({ symbol, bIndex, P, p, eta, m, qActual });
+            const cand: Candidate = { symbol, bIndex, P, p, eta, m, qActual };
+            const sk = key + "#" + qActual;
+            const prev = seen.get(sk);
+            if (prev !== undefined) {
+              // same operations in the same axes: keep the simplest affine map
+              if (mapCost(cand) < mapCost(list[prev])) list[prev] = cand;
+              continue;
+            }
+            seen.set(sk, list.length);
+            list.push(cand);
           }
         }
       }
