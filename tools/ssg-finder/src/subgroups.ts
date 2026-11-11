@@ -110,20 +110,18 @@ export function tSubgroups(rec: GroupRecord): SubgroupClass[] {
   }
 
   const isSub = (a: number[], b: number[]) => a.every((x) => b.includes(x));
-  const out: SubgroupClass[] = classes.map(({ rep, size }) => {
+  const pairs: { cls: SubgroupClass; rep: number[] }[] = classes.map(({ rep, size }) => {
     const inP = new Set(rep.map((i) => rkey(K[i].R)));
     // A proper subgroup with nothing strictly between it and K (P = K itself is not maximal).
     const maximal = rep.length < n && !all.some((Q) => Q.length > rep.length && Q.length < n && isSub(rep, Q));
-    return {
+    return { rep, cls: {
       pointOps: rep.map((i) => K[i]),
       ops: ops.filter((op) => inP.has(rkey(splitOp(op, 1).R))),
       index: n / rep.length,
       classSize: size,
       maximal,
-      _idx: rep,
-    } as SubgroupClass & { _idx: number[] };
+    } };
   });
-  out.sort((a, b) => a.index - b.index || cmpIdx((a as any)._idx, (b as any)._idx));
-  for (const c of out) delete (c as any)._idx;
-  return out;
+  pairs.sort((a, b) => a.cls.index - b.cls.index || cmpIdx(a.rep, b.rep));
+  return pairs.map(({ cls }) => cls);
 }

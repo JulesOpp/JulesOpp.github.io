@@ -1,13 +1,13 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { matInv, Q } from "../src/rational";
+import { matInv, Q, toSafeInt } from "../src/rational";
 import { ssgSymbolInAxes } from "../src/ssgsymbol";
 import { buildOps, GroupRecord, paramsOf, parseLinear, splitOp, type SOp } from "../src/ssg";
 import { loadMoyo } from "../src/moyo";
 import { tSubgroups } from "../src/subgroups";
 import { crystalSystemOf } from "../src/symbol";
-import { formatQ, standardise, transformOps, type Standardised } from "../src/standardise";
+import { formatQ, isFail, standardise, transformOps, type Standardised } from "../src/standardise";
 
 // P-3c1(0,0,g)000, IT A No. 165 generators in hexagonal axes with the 4th coordinate.
 const P3c1: GroupRecord = {
@@ -15,13 +15,30 @@ const P3c1: GroupRecord = {
   gen: ["y,-x+y,-z,-t", "x-y,-y,-z+1/2,-t"],
 };
 
-const isOk = (r: ReturnType<typeof standardise>): r is Standardised => !("ok" in r && r.ok === false);
+const isOk = (r: ReturnType<typeof standardise>): r is Standardised => !isFail(r);
 
 beforeAll(async () => {
   await loadMoyo();
 });
 
 describe("standardise (public)", () => {
+  it("safe integer conversion rejects fractions and overflow on either side", () => {
+    for (const x of [Q.of(2n ** 60n), -(2n ** 60n), Q.of(1, 2)])
+      expect(() => toSafeInt(x, "x")).toThrow(new RangeError("x"));
+    for (const n of [0n, 9007199254740991n, -9007199254740991n]) {
+      expect(toSafeInt(n, "x")).toBe(Number(n));
+      expect(toSafeInt(Q.of(n), "x")).toBe(Number(n));
+    }
+  });
+  it("isFail narrows a failed standardisation", () => {
+    const badOps: SOp[] = [];
+    const st = standardise(badOps, ["0,0,g"]);
+    // @ts-expect-error reason is unavailable before narrowing
+    void st.reason;
+    expect(isFail(st)).toBe(true);
+    if (isFail(st)) expect(st.reason).toEqual(expect.any(String));
+    else expect(st.symbol.full).toEqual(expect.any(String));
+  });
   it("a group already in its standard setting keeps its symbol", () => {
     const r = standardise(buildOps(P3c1), P3c1.q);
     expect(isOk(r)).toBe(true);

@@ -10,7 +10,7 @@
 import { GroupRecord, SOp, buildOps, formatOp } from "./ssg";
 import { parseByuPage } from "./paste";
 import { tSubgroups } from "./subgroups";
-import { standardise, type Standardised } from "./standardise";
+import { isFail, standardise, type Standardised } from "./standardise";
 import { ssgSymbolInAxes } from "./ssgsymbol";
 import { crystalSystemOf, type CrystalSystem } from "./symbol";
 
@@ -77,10 +77,9 @@ export function runSubgroups(raw: string, f: SubFilter): { parent: string; paren
   const rows: SubRow[] = [];
   for (const c of tSubgroups(rec)) {
     const st = standardise(c.ops, rec.q);
-    const type = "ok" in st && st.ok === false ? null : (st as Standardised);
     const idx = `index ${c.index}, ${c.pointOps.length} point operations`;
-    if (!type) {
-      warnings.push(`Subgroup (${idx}) could not be identified: ${(st as { reason: string }).reason}`);
+    if (isFail(st)) {
+      warnings.push(`Subgroup (${idx}) could not be identified: ${st.reason}`);
       rows.push({
         index: c.index, tIndex: c.index, kIndex: 1, classSize: c.classSize, maximal: c.maximal,
         pointGroup: "?", sgNumber: 0, sgSymbol: "?", inParentAxes: null, type: null,
@@ -88,6 +87,7 @@ export function runSubgroups(raw: string, f: SubFilter): { parent: string; paren
       });
       continue;
     }
+    const type = st;
     const sys = crystalSystemOf(type.sgNumber);
     const inParent = sys === parentSystem ? ssgSymbolInAxes(c.ops, rec.q, parentSystem)?.full ?? null : null;
     rows.push({
@@ -116,9 +116,20 @@ export function keep(r: SubRow, f: SubFilter): boolean {
   return true;
 }
 
+const parentCache = new Map<string, number>();
+let cacheHits = 0;
+/** Test-only cumulative parent cache hit counter. */
+export function _cacheHits(): number { return cacheHits; }
+
 /** Space-group number of the parent's basic group, from its identity-section standardisation. */
 function parentNumber(rec: GroupRecord): number {
-  const st = standardise(buildOps(rec), rec.q);
-  if ("ok" in st && st.ok === false) throw new SubgroupError(`could not identify the parent group: ${st.reason}`);
-  return (st as Standardised).sgNumber;
+  const ops = buildOps(rec);
+  const cacheKey = JSON.stringify([ops.map(formatOp).sort(), rec.q]);
+  const hit = parentCache.get(cacheKey);
+  if (hit !== undefined) { cacheHits++; return hit; }
+  const st = standardise(ops, rec.q);
+  if (isFail(st)) throw new SubgroupError(`could not identify the parent group: ${st.reason}`);
+  if (parentCache.size === 8) parentCache.delete(parentCache.keys().next().value!);
+  parentCache.set(cacheKey, st.sgNumber);
+  return st.sgNumber;
 }

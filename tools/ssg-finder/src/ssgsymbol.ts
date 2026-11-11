@@ -24,6 +24,12 @@
 //     glide (a+b)/2 of a diagonal plane, which IT calls g);
 //  3. keep the copies nearest the origin (squared fractional offset of the axis/plane, 0 when it
 //     passes through the origin) and take the smallest letter among them;
+//     This is squared offset in lattice coordinates, not Cartesian distance. For
+//     hexagonal 3/6-fold axes and diagonal planes it is a tie-break order; the lattice
+//     coordinate norm can rank copies differently from the Cartesian metric.
+//     Retain the smallest letter on disagreement: the 775-record d = 1 sweep finds
+//     two such positions, in basic groups 126 and 133, both with q = (1/2,1/2,g).
+//     This is empirical support for these tables, not a guarantee for arbitrary inputs.
 //  4. eps = -1 always gives 0 (an internal origin shift removes the internal translation).
 // Step 3 is what makes P4nc(1/2,1/2,g) read 0 (the n-glide through the origin) while P4bm(1/2,1/2,g)
 // reads the m-plane at x-y = 1/2, and Pmn2_1(0,1/2,g) reads the 2_1 axis at (1/4,0,z). With q_r = 0
@@ -42,6 +48,9 @@ export interface SsgSymbol {
   shifts: string;
   full: string;
 }
+
+/** Test-only number of symbol positions whose nearest copies give different letters. */
+export const _stats = { disagree: 0 };
 
 const Z = Q.ZERO;
 const qi = (n: number | bigint) => Q.of(BigInt(n));
@@ -339,11 +348,14 @@ export function ssgSymbolInAxes(ops: SOp[], qFamily: string[], system: CrystalSy
       if (!cs.length) return null;
       const near = cs.reduce((a, c) => (c.dist.cmp(a) < 0 ? c.dist : a), cs[0].dist);
       let best: string | null = null;
+      const nearestLetters = new Set<string>();
       for (const c of cs) {
         if (!c.dist.eq(near)) continue;
         const l = c.eps === -1 ? "0" : letterOf(qr.reduce((acc, x, i) => acc.sub(x.mul(c.t3[i])), c.w4));
+        if (l !== null) nearestLetters.add(l);
         if (l !== null && (best === null || RANK.indexOf(l) < RANK.indexOf(best))) best = l;
       }
+      if (nearestLetters.size > 1) _stats.disagree++;
       if (best === null) return null;
       shifts += best;
     }

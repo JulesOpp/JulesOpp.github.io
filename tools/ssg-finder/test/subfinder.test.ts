@@ -1,7 +1,9 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadMoyo } from "../src/moyo";
+import * as subfinder from "../src/subfinder";
+import * as standardiser from "../src/standardise";
 import { keep, runSubgroups, SubgroupError, type SubRow } from "../src/subfinder";
 
 beforeAll(async () => {
@@ -55,6 +57,40 @@ describe("runSubgroups (P-3c1(0,0,g)000)", () => {
     const d2 = page(["0,0,g", "0,0,h"], ["x,y,z,t,u", "y,-x+y,-z,-t,-u"]);
     expect(() => runSubgroups(d2, { kIndex: 1 })).toThrow("only d = 1 is supported for now");
   });
+});
+
+it("caches the parent once for repeated canonical operators and q text", () => {
+  const raw = page(["0,0,g+99"], ["x,y,z,t", "y,-x+y,-z,-t", "x-y,-y,-z+1/2,-t"]);
+  const spy = vi.spyOn(standardiser, "standardise");
+  const hits = vi.spyOn(subfinder, "_cacheHits");
+  const before = subfinder._cacheHits();
+  const a = runSubgroups(raw, { kIndex: 1 });
+  const first = spy.mock.calls.length;
+  runSubgroups(raw, { kIndex: 1 });
+  expect(first).toBe(a.rows.length + 1);
+  expect(spy.mock.calls.length - first).toBe(a.rows.length);
+  expect(subfinder._cacheHits()).toBe(before + 1);
+  expect(hits).toHaveBeenCalledTimes(2);
+  spy.mockRestore(); hits.mockRestore();
+});
+
+it("parent cache uses canonical operations and q text, and evicts beyond eight entries", () => {
+  const original = page(["0,0,g+101"], ["x,y,z,t", "y,-x+y,-z,-t", "x-y,-y,-z+1/2,-t"]);
+  const reordered = page(["0,0,g+101"], ["x-y,-y,-z+1/2,-t", "y,-x+y,-z,-t", "x,y,z,t"]);
+  runSubgroups(original, { kIndex: 1 });
+  const before = subfinder._cacheHits();
+  runSubgroups(reordered, { kIndex: 1 });
+  expect(subfinder._cacheHits()).toBe(before + 1);
+  // Identity-only groups keep this capacity check cheap; the q text must be part
+  // of the key even though every one has the same basic space-group number.
+  const raws = Array.from({ length: 9 }, (_, i) => page([`0,0,g+${i+201}`], ["x,y,z,t"]));
+  const start = subfinder._cacheHits();
+  for (const raw of raws) runSubgroups(raw, { kIndex: 1 });
+  expect(subfinder._cacheHits()).toBe(start);
+  runSubgroups(raws[8], { kIndex: 1 });
+  expect(subfinder._cacheHits()).toBe(start + 1);
+  runSubgroups(raws[0], { kIndex: 1 });
+  expect(subfinder._cacheHits()).toBe(start + 1);
 });
 
 describe("keep", () => {

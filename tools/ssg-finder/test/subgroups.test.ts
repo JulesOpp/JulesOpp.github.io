@@ -11,6 +11,35 @@ const P3c1: GroupRecord = {
   gen: ["y,-x+y,-z,-t", "x-y,-y,-z+1/2,-t"],
 };
 
+// IT A generators: unique-axis-b P2/m, axial mirrors Pmmm, and P4/mmm.
+const handRecords = [P3c1,
+  { ...P3c1, sym: "P2/m", gen: ["-x,y,-z,-t", "x,-y,z,t"] },
+  { ...P3c1, sym: "Pmmm", gen: ["-x,y,z,t", "x,-y,z,t", "x,y,-z,-t"] },
+  { ...P3c1, sym: "P4/mmm", gen: ["-y,x,z,t", "x,-y,z,t", "x,y,-z,-t"] },
+];
+
+// Independently compare each class to every conjugate of every larger class.
+// Matrix products, rather than subgroup implementation indices, determine containment.
+function checkMaximal(rec: GroupRecord) {
+  const K = pointGroup(buildOps(rec), 1).map(p => p.R);
+  const mul = (a: number[][], b: number[][]) => a.map(row => [0,1,2].map(j => row.reduce((s,x,k) => s+x*b[k][j],0)));
+  const rk = (a: number[][]) => JSON.stringify(a);
+  const id = rk([[1,0,0],[0,1,0],[0,0,1]]);
+  const classes = tSubgroups(rec);
+  for (const p of classes) {
+    const keys = p.pointOps.map(o => rk(o.R));
+    const intermediate = classes.some(q => q.pointOps.length > keys.length && q.pointOps.length < K.length &&
+      K.some(g => {
+        const inv = K.find(h => rk(mul(g,h)) === id)!;
+        const conjugate = new Set(q.pointOps.map(h => rk(mul(mul(g,h.R),inv))));
+        return keys.every(k => conjugate.has(k));
+      }));
+    expect(p.maximal, `${rec.sym}: index ${p.index}`).toBe(keys.length < K.length && !intermediate);
+  }
+}
+
+it("maximal, all classes: four hand groups", () => handRecords.forEach(checkMaximal));
+
 const key = (o: { W: number[][]; w: { toString(): string }[] }) => JSON.stringify(o.W) + o.w.map(String).join(",");
 
 function checkClosedAndIndex(rec: GroupRecord) {
@@ -84,6 +113,11 @@ describe.skipIf(!have)("tSubgroups vs oracle fixtures", () => {
       expect(ms(cl.map((c) => c.index)), rec.label).toEqual(ms(fx.classes.map((c: any) => c.index)));
       expect(ms(cl.map((c) => c.classSize)), rec.label).toEqual(ms(fx.classes.map((c: any) => c.class_size)));
     }
+  });
+  it("maximal, all classes: all 775 local parents", () => {
+    const recs = allRecords();
+    expect(recs).toHaveLength(775);
+    recs.forEach(checkMaximal);
   });
   it("15.1.7.3 keeps its centring translation in every class", () => {
     const rec = allRecords().find((r) => r.label === "15.1.7.3")!;

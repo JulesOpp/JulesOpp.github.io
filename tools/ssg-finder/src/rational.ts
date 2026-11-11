@@ -75,6 +75,14 @@ export class Q {
   toJSON(): string { return this.toString(); }
 }
 
+/** Convert an exact integer without losing precision; the caller names the quantity. */
+export function toSafeInt(x: Q | bigint, what: string): number {
+  if (typeof x !== "bigint" && !x.isInt()) throw new RangeError(what);
+  const n = typeof x === "bigint" ? x : x.n;
+  if (n < -9007199254740991n || n > 9007199254740991n) throw new RangeError(what);
+  return Number(n);
+}
+
 export function gcd(a: bigint, b: bigint): bigint {
   if (a < 0n) a = -a;
   if (b < 0n) b = -b;

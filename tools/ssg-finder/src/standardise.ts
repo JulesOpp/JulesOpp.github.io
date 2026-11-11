@@ -30,7 +30,21 @@
 //     settings; the other names are returned in `alternates`. BYU's own choice between such
 //     names follows no rule found here, so callers should accept any of primary + alternates.
 
-import { gcd, matInv, matMul, Q, type QMat, type QVec } from "./rational";
+// The {-1,0,1} normaliser search is a finite conventional-setting search: signed axial
+// permutations and the hexagonal-axis changes needed by the supported d = 1 tables fit
+// this bound. Low-symmetry point groups can have unbounded integral normalisers; this is
+// not an enumeration of their full normaliser and gives no completeness guarantee there.
+//
+// For k = 1 we search with p4 = 0: the integer row m is varied through its translation
+// denominator residues, which supplies the internal-phase choices used by this d = 1
+// convention. Internal-origin shifts of eps = -1 elements do not affect their printed
+// zero letter. This suffices in the tested conventional settings, not a general proof
+// of equivalence for arbitrary superspace lattices or higher d.
+//
+// The letter-position comparison order is empirical, fixed by the 775-record d = 1
+// sweep. It is a naming convention fitted to those data, not a derived universal order.
+
+import { gcd, toSafeInt, matInv, matMul, Q, type QMat, type QVec } from "./rational";
 import { identify, numToQ, type Op3 } from "./identify";
 import { paramsOf, parseLinear, type SOp } from "./ssg";
 import { crystalSystemOf, type CrystalSystem } from "./symbol";
@@ -49,6 +63,12 @@ export interface Standardised {
   p4: string;
   /** Full symbols of the same type in the other tied settings (sorted, without the primary). */
   alternates: string[];
+}
+
+export interface Fail { ok: false; reason: string }
+
+export function isFail(x: Standardised | Fail): x is Fail {
+  return x.ok === false;
 }
 
 const Z = Q.ZERO;
@@ -191,7 +211,7 @@ export function transformOps(ops: SOp[], P: QMat, p: QVec, eta: 1 | -1, m: QVec,
   for (const o of ops) {
     const Wq = matMul(matMul(S, qmat(o.W)), Si);
     if (!Wq.every((r) => isIntV(r))) return null;
-    const W = Wq.map((r) => r.map((x) => Number(x.n)));
+    const W = Wq.map((r) => r.map((x) => toSafeInt(x, "operator matrix entry")));
     const w0 = vsub(vadd(mv(S, o.w), s), mv(Wq, s));
     for (const c of cen.values()) {
       const op = { W, w: vadd(w0, c).map((x) => x.mod1()) };
@@ -308,7 +328,7 @@ function normaliser(g: Group3, onlyIdentity: boolean, T: QMat): NormEl[] {
       const Ry = matMul(matMul(BpTi, qmat(Rp)), BpT);
       const rhs = mv(BpTi, vsub(target, mv(Nq, o.t)));
       for (let i = 0; i < 3; i++) {
-        A.push([0, 1, 2].map((j) => BigInt((i === j ? 1 : 0) - Number(Ry[i][j].n))));
+        A.push([0, 1, 2].map((j) => BigInt((i === j ? 1 : 0) - toSafeInt(Ry[i][j], "primitive rotation entry"))));
         b.push(rhs[i]);
       }
     }
@@ -403,7 +423,7 @@ function mapCost(c: Candidate): number {
 }
 
 /** All candidate BYU-axes forms of the group (exported for tests/debugging). */
-export function candidates(ops: SOp[], Qtext: string[]): { sgNumber: number; list: Candidate[] } | { ok: false; reason: string } {
+export function candidates(ops: SOp[], Qtext: string[]): { sgNumber: number; list: Candidate[] } | Fail {
   if (Qtext.length !== 1 || ops.some((o) => o.W.length !== 4)) return { ok: false, reason: "only d = 1 is supported for now" };
   const names = paramsOf(Qtext);
   const q: Lin[] = Qtext[0].split(",").map((s) => parseLinear(s, names));
@@ -425,7 +445,7 @@ export function candidates(ops: SOp[], Qtext: string[]): { sgNumber: number; lis
   const Ti = L;
   for (const o of ops3) {
     const Rq = matMul(matMul(T, qmat(o.R)), Ti);
-    const R = Rq.map((r) => r.map((x) => Number(x.n)));
+    const R = Rq.map((r) => r.map((x) => toSafeInt(x, "operator matrix entry")));
     const tt = vsub(vadd(mv(T, o.t), t), mv(Rq, t)).map((x) => x.mod1());
     if (isIdW(R)) cents.push(tt);
     const k = mkey(R);
@@ -476,7 +496,7 @@ export function candidates(ops: SOp[], Qtext: string[]): { sgNumber: number; lis
           // The free components of q' may also take any integer shift: it changes the internal
           // translations by m'.t3, so try every residue mod the translation denominators.
           const free = form.split(",").map((x) => !/^-?\d/.test(x));
-          const den = [0, 1, 2].map((j) => (free[j] ? Number(base.reduce((l, o) => lcmB(l, o.w[j].d), 1n)) : 1));
+          const den = [0, 1, 2].map((j) => (free[j] ? toSafeInt(base.reduce((l, o) => lcmB(l, o.w[j].d), 1n), "translation denominator") : 1));
           for (const k of grid(den)) {
             const mp = mp0.map((x, j) => x.add(qi(k[j])));
             const m = toM(mp, P);
@@ -542,7 +562,8 @@ function rank(list: Candidate[], system: CrystalSystem): Candidate[] {
       }
     if (a.symbol.full !== b.symbol.full) return a.symbol.full < b.symbol.full ? -1 : 1;
     const neg = (c: Candidate) => c.qActual.split("-").length;
-    return neg(a) - neg(b) || nz(a) - nz(b) || b.eta - a.eta || a.m.reduce((s, x) => s + Math.abs(x.toNumber()), 0) - b.m.reduce((s, x) => s + Math.abs(x.toNumber()), 0);
+    const magnitude = (c: Candidate) => c.m.reduce((s, x) => s.add(x.sign() < 0 ? x.neg() : x), Z);
+    return neg(a) - neg(b) || nz(a) - nz(b) || b.eta - a.eta || magnitude(a).cmp(magnitude(b));
   };
   return [...list].sort(cmp);
 }
@@ -551,7 +572,7 @@ function rank(list: Candidate[], system: CrystalSystem): Candidate[] {
  * Standard (BYU-convention) setting and type of a (3+1)D group given by its operations (canonical
  * list incl. centrings) and q text in the same axes. Requires loadMoyo().
  */
-export function standardise(ops: SOp[], Qtext: string[]): Standardised | { ok: false; reason: string } {
+export function standardise(ops: SOp[], Qtext: string[]): Standardised | Fail {
   const c = candidates(ops, Qtext);
   if ("ok" in c) return c;
   if (!c.list.length) return { ok: false, reason: "no standard setting with a (3+1)D Bravais-class q form" };
@@ -571,7 +592,7 @@ export function standardise(ops: SOp[], Qtext: string[]): Standardised | { ok: f
     P: best.P.map((r) => r.map(String)),
     p: best.p.map(String),
     eta: best.eta,
-    m: best.m.map((x) => Number(x.n)),
+    m: best.m.map((x) => toSafeInt(x, "internal shear entry")),
     p4: "0",
     alternates,
   };

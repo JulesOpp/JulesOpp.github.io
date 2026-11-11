@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildOps, GroupRecord } from "../src/ssg";
 import { crystalSystemOf } from "../src/symbol";
-import { ssgSymbolInAxes } from "../src/ssgsymbol";
+import { ssgSymbolInAxes, _stats } from "../src/ssgsymbol";
 
 // P-3c1(0,0,g)000, IT A No. 165 generators in hexagonal axes with the 4th coordinate.
 const P3c1: GroupRecord = {
@@ -19,6 +19,14 @@ describe("ssgSymbolInAxes (public)", () => {
   it("phase letters: P6_2 with t' = t + 1/6 gives h", () => {
     const r: GroupRecord = { sym: "", cls: "", d: 1, q: ["0,0,g"], params: ["g"], cen: [], gen: ["x-y,x,z+1/3,t+1/6"] };
     expect(ssgSymbolInAxes(buildOps(r), r.q, "hexagonal")?.full).toBe("P6_2(0,0,g)h");
+  });
+  it("keeps the minimum letter when nearest copies disagree (synthetic)", () => {
+    // Hand axial IT A P4/mmm generators, plus an internal half translation. This
+    // deliberately supplies coincident physical copies carrying both 0 and s.
+    const rec = { ...P3c1, gen: ["-y,x,z,t", "x,-y,z,t", "x,y,-z,-t", "x,y,z,t+1/2"] };
+    const before = _stats.disagree;
+    expect(ssgSymbolInAxes(buildOps(rec), rec.q, "tetragonal")?.full).toBe("P4/mmm(0,0,g)0000");
+    expect(_stats.disagree).toBeGreaterThan(before);
   });
   it("refuses d != 1", () => {
     const ops = buildOps({ ...P3c1, d: 2, gen: ["y,-x+y,-z,-t,-u"] });
@@ -43,17 +51,24 @@ describe.skipIf(!have)("ssgSymbolInAxes vs all (3+1)D BYU symbols", () => {
   it("reproduces every record's own symbol", () => {
     const recs = allD1();
     expect(recs).toHaveLength(775);
+    _stats.disagree = 0;
+    const affected: string[] = [];
     const bad: string[] = [];
     for (const r of recs) {
       const sg = Number(r.label.split(".")[0]);
+      const before = _stats.disagree;
       let got: string;
       try {
         got = ssgSymbolInAxes(buildOps(r), r.q, crystalSystemOf(sg))?.full ?? "null";
       } catch (e) {
         got = `throw ${(e as Error).message}`;
       }
+      if (_stats.disagree > before) affected.push(`${sg} (${r.q.join(";")})`);
       if (got !== r.sym) bad.push(`${sg}\t${r.label}\t${r.sym}\tgot ${got}`);
     }
+    console.log(`nearest-copy disagreements: ${_stats.disagree}; parents: ${[...new Set(affected)].join(", ")}`);
+    expect(_stats.disagree).toBe(2);
+    expect([...new Set(affected)].sort()).toEqual(["126 (1/2,1/2,g)", "133 (1/2,1/2,g)"]);
     if (bad.length) {
       const bySg = new Map<string, string[]>();
       for (const b of bad) {
