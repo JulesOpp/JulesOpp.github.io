@@ -6,22 +6,36 @@ type and the map onto it.  BYU-derived, so local only (licence rule D1).
 
 Usage:  python3 make_subgroup_fixtures.py [labels ...] [--jobs N] [--resume]
 
-Uses at most 4 worker processes by default (override with --jobs or SSG_JOBS).  --resume keeps
+Uses at most 4 worker processes (--jobs or SSG_JOBS can select fewer).  --resume keeps
 every fixture that is already complete and only computes the missing ones.
 """
-import argparse, json, multiprocessing, os, sys, time
+import argparse, functools, json, multiprocessing, os, sys, time
+
+
+def worker_init():
+    """Enforce the one-thread BLAS budget before numpy loads, including spawned workers."""
+    for name in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+        os.environ[name] = "1"  # override inherited settings: the four-core budget is a hard cap
+
+
+worker_init()
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # also under python -I
 import exact  # noqa: E402
 import ssg_equiv as se  # noqa: E402
 import subgroups  # noqa: E402
 
-MAX_JOBS = int(os.environ.get("SSG_JOBS", "4"))
+
+def cap_jobs(n: int) -> int:
+    return max(1, min(n, 4))
+
+
+MAX_JOBS = cap_jobs(int(os.environ.get("SSG_JOBS", "4")))
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "local", "fixtures", "subgroups")
 
 
 def fixture(label):
-    db = se.load_d1()
+    db = se.load_records(1)
     rec = db[label]
     classes = []
     for c in subgroups.t_subgroups(rec, db):
@@ -40,12 +54,12 @@ def fixture(label):
     return dict(label=label, sym=rec["sym"], order=order, classes=classes)
 
 
-def work(label):
+def work(label, out=OUT):
     t = time.time()
     fx = fixture(label)
     head = json.dumps({k: v for k, v in fx.items() if k != "classes"})[:-1]
     body = ",\n  ".join(json.dumps(c) for c in fx["classes"])
-    path = os.path.join(OUT, f"{label}.json")
+    path = os.path.join(out, f"{label}.json")
     with open(path + ".tmp", "w") as f:
         f.write(f'{head}, "classes": [\n  {body}\n]}}\n')
     os.replace(path + ".tmp", path)                    # never leave a truncated fixture behind
@@ -53,30 +67,37 @@ def work(label):
     return label, len(fx["classes"]), bad, time.time() - t
 
 
-def existing(label):
+def existing(label, out=OUT):
     """The fixture already on disk for `label` if it is complete and readable, else None."""
     try:
-        with open(os.path.join(OUT, f"{label}.json")) as f:
+        with open(os.path.join(out, f"{label}.json")) as f:
             fx = json.load(f)
         return fx if fx.get("label") == label and isinstance(fx.get("classes"), list) else None
     except (OSError, ValueError):
         return None
 
 
-def main():
+def main(argv=None, out=OUT):
     ap = argparse.ArgumentParser()
     ap.add_argument("labels", nargs="*")
     ap.add_argument("--jobs", type=int, default=MAX_JOBS)
     ap.add_argument("--resume", action="store_true", help="keep complete fixtures, compute the rest")
-    a = ap.parse_args()
-    labels = a.labels or list(se.load_d1())
-    os.makedirs(OUT, exist_ok=True)
+    a = ap.parse_args(argv)
+    a.jobs = cap_jobs(a.jobs)
+    labels = a.labels or list(se.load_records(1))
+    os.makedirs(out, exist_ok=True)
     t0 = time.time()
     log = []
+    prior_seconds = 0
     if a.resume:
+        try:
+            with open(os.path.join(out, "_summary.json")) as f:
+                prior_seconds = json.load(f).get("seconds", 0)
+        except (OSError, ValueError):
+            pass
         todo = []
         for label in labels:
-            fx = existing(label)
+            fx = existing(label, out)
             if fx is None:
                 todo.append(label)
             else:
@@ -84,15 +105,17 @@ def main():
                 log.append(dict(label=label, classes=len(fx["classes"]), unidentified=bad, seconds=None))
         print(f"resume: {len(log)} complete fixtures kept, {len(todo)} to compute", flush=True)
         labels = todo
-    with multiprocessing.Pool(max(1, a.jobs)) as pool:
-        for label, n, bad, dt in pool.imap_unordered(work, labels):
+    with multiprocessing.Pool(a.jobs, initializer=worker_init) as pool:
+        for label, n, bad, dt in pool.imap_unordered(functools.partial(work, out=out), labels):
             log.append(dict(label=label, classes=n, unidentified=bad, seconds=round(dt, 2)))
             print(f"{label:14s} {n:3d} classes {dt:6.1f}s" + (f"  UNIDENTIFIED {bad}" if bad else ""), flush=True)
     log.sort(key=lambda r: tuple(int(x) for x in r["label"].split(".")))
+    wall_seconds = round(time.time() - t0, 1)
     summary = dict(groups=len(log), classes=sum(r["classes"] for r in log),
-                   unidentified=[r for r in log if r["unidentified"]], seconds=round(time.time() - t0, 1),
+                   unidentified=[r for r in log if r["unidentified"]], seconds=round(prior_seconds + wall_seconds, 1),
+                   wall_seconds_this_run=wall_seconds,
                    jobs=a.jobs, runs=log)
-    with open(os.path.join(OUT, "_summary.json"), "w") as f:
+    with open(os.path.join(out, "_summary.json"), "w") as f:
         json.dump(summary, f, indent=1)
     print(f"{summary['groups']} groups, {summary['classes']} classes, "
           f"{len(summary['unidentified'])} with unidentified classes, {summary['seconds']}s")

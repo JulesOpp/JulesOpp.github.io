@@ -152,7 +152,7 @@ def mixed_solve(G, H, h, a, b):
         z, t = [0] * k, [0] * b
     rhs = [h[i] - z[i] - sum(H[i][j] * t[j] for j in range(b)) for i in range(k)]
     s = solve_lin(G, rhs, a) if a else []
-    assert s is not None
+    assert s is not None, "mixed congruence solution must satisfy the real linear system"
     return s, t
 
 
@@ -169,7 +169,8 @@ def int_lattice_of_real(G):
 # ================================================================ group data
 def q_generic(rec):
     """q of a d = 1 record at the generic parameter values of CONTRACTS §3.1."""
-    assert rec["d"] == 1, "d > 1 not supported"
+    if rec["d"] != 1:
+        raise ValueError("only (3+1)D groups (d = 1) are supported")
     params = {p: Fr(exact.GENERIC_SEEDS[i], exact.P_GENERIC) for i, p in enumerate(rec["params"])}
     return exact.eval_q(rec, params)[0]
 
@@ -179,7 +180,7 @@ def lattice_basis(vecs, n):
     vs = [[Fr(int(i == j)) for j in range(n)] for i in range(n)] + [[Fr(x) for x in v] for v in vecs]
     D = den([x for v in vs for x in v])
     H = im.hnf([[int(x * D) for x in v] for v in vs])
-    assert len(H) == n
+    assert len(H) == n, "lattice basis must have full rank"
     return tr([[Fr(x, D) for x in r] for r in H])
 
 
@@ -192,7 +193,8 @@ class Prep:
     """Everything about one record that the search needs, computed once."""
 
     def __init__(self, rec):
-        assert rec["d"] == 1, "only (3+1)D groups (d = 1) are supported"
+        if rec["d"] != 1:
+            raise ValueError("only (3+1)D groups (d = 1) are supported")
         self.rec = rec
         self.ops = exact.build_ops(rec)
         self.lin = {}
@@ -230,6 +232,9 @@ class Prep:
             orb = []
             for W, w in self.ops:
                 x = (np.array([r[:3] for r in W[:3]], float) @ x0 + np.array([float(t) for t in w[:3]])) % 1.0
+                # Float motif deduplication feeds spglib's basic-group standardisation.
+                # Candidate conjugation and lattice membership are checked exactly in
+                # equivalent(), _solve_m(), and _solve_shift(); check_map() verifies maps.
                 if not any(np.allclose((x - y + 0.5) % 1.0 - 0.5, 0, atol=1e-8) for y in orb):
                     orb.append(x)
             pos += orb
@@ -291,6 +296,9 @@ def _unimodular():
 def normaliser_candidates(Kstd, Lstd):
     """Integer N (bounded, det ±1) with N K N^-1 = K and N L = L, one per coset N·K (m×3×3 array)."""
     N = _unimodular()
+    # Float determinants only recover the sign of these integer unimodular matrices;
+    # _unimodular() selected det ±1 with integer arithmetic. equivalent() checks det(P)
+    # and the superspace lattice volume exactly before accepting a candidate.
     det = np.round(np.linalg.det(N)).astype(np.int64)
     adj = np.stack([np.cross(N[:, 1], N[:, 2]), np.cross(N[:, 2], N[:, 0]), np.cross(N[:, 0], N[:, 1])], axis=2)
     Ninv = adj * det[:, None, None]                    # inverse of a det ±1 matrix
@@ -304,6 +312,9 @@ def normaliser_candidates(Kstd, Lstd):
     L = np.array([[float(x) for x in r] for r in Lstd])
     Li = np.linalg.inv(L)
     X = Li @ N[ok] @ L
+    # Float prefilter rejects N that do not preserve the standard centred lattice.
+    # _solve_m() checks superspace lattice integrality exactly, and equivalent()
+    # checks its determinant/volume; check_map() independently verifies both.
     good = np.all(np.abs(X - np.round(X)) < 1e-9, axis=(1, 2))
     # One N per coset N·K: if S is an equivalence with linear part P R (R ∈ K_A), then S∘g^-1
     # (g ∈ A with linear part R) is one with linear part P.  Keep the first (simplest) of each.
@@ -431,14 +442,19 @@ def check_map(rec_a, q_a, rec_b, res):
 
 # ================================================================ data access / CLI
 @functools.lru_cache(maxsize=None)
-def load_d1(data_dir=DATA):
-    """{label: record} for every d = 1 record in local/data."""
+def load_records(d: int, data_dir=DATA) -> dict[str, dict]:
+    """Cached {label: record} for dimension d, in file / label order."""
     out = {}
     for f in sorted(glob.glob(os.path.join(data_dir, "sg*.json"))):
-        for label, r in json.load(open(f))["groups"].items():
-            if r["d"] == 1:
+        with open(f) as source:
+            groups = json.load(source)["groups"]
+        for label, r in groups.items():
+            if r["d"] == d:
                 out[label] = dict(r, label=label)
     return out
+
+
+def load_d1(data_dir=DATA): return load_records(1, data_dir)
 
 
 if __name__ == "__main__":

@@ -6,12 +6,13 @@ below).  Set SSG_FULL=1 for the sweep over all 775 (3+1)D records:
 
   SSG_FULL=1 /opt/anaconda3/bin/python3 -I -m pytest tools/ssg-finder/reference/test_subgroups.py
 """
-import collections, functools, glob, json, os, sys
+import collections, functools, json, os, sys
 
 import pytest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+from ssg_equiv import load_records  # noqa: E402
 
 DATA = os.path.join(HERE, "..", "local", "data")
 FULL = os.environ.get("SSG_FULL") == "1"
@@ -22,19 +23,8 @@ NAMED = ["14.1.6.3", "15.1.7.3", "165.1.24.1", "194.1.24.1"]
 NAMED_SG = {14, 15, 62, 165, 194}
 
 
-@functools.lru_cache(maxsize=None)
-def all_d1():
-    """{label: record} for every d = 1 record, in file / label order."""
-    out = {}
-    for f in sorted(glob.glob(os.path.join(DATA, "sg*.json"))):
-        for label, r in json.load(open(f))["groups"].items():
-            if r["d"] == 1:
-                out[label] = dict(r, label=label)
-    return out
-
-
 def rec(label):
-    return all_d1()[label]
+    return load_records(1)[label]
 
 
 def sg_of(label):
@@ -45,7 +35,7 @@ def sg_of(label):
 def sample():
     """Labels under test: all of them with SSG_FULL=1, else the first record of every
     Bravais class, all records of NAMED_SG and NAMED."""
-    recs = all_d1()
+    recs = load_records(1)
     if FULL:
         return list(recs)
     seen, out = set(), []
@@ -62,7 +52,7 @@ def test_sample_covers_named_groups():
     for label in NAMED:
         assert label in s
     assert any(sg_of(l) == 62 for l in s)
-    assert len({rec(l)["cls"] for l in s}) == len({r["cls"] for r in all_d1().values()})
+    assert len({rec(l)["cls"] for l in s}) == len({r["cls"] for r in load_records(1).values()})
 
 
 @byu
@@ -195,3 +185,74 @@ def test_every_subgroup_identified():
             if len(c["matches"]) != 1:
                 bad.append((l, c["pg_ops"], c["sg"], c["matches"]))
     assert bad == []
+
+
+# Public hygiene checks use synthetic records and fixtures, never local BYU data.
+def test_cap_jobs():
+    from make_subgroup_fixtures import cap_jobs
+    assert [cap_jobs(n) for n in (16, 0, 3)] == [4, 1, 3]
+
+
+def test_worker_env():
+    import subprocess
+    env = dict(os.environ, SSG_JOBS="16", **{k: "8" for k in (
+        "OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "VECLIB_MAXIMUM_THREADS")})
+    code = ("import sys; sys.path.insert(0, " + repr(HERE) + "); "
+            "import make_subgroup_fixtures as m; assert m.MAX_JOBS == 4; "
+            "assert all(m.os.environ[k] == '1' for k in "
+            "('OPENBLAS_NUM_THREADS','OMP_NUM_THREADS','MKL_NUM_THREADS','VECLIB_MAXIMUM_THREADS')); "
+            "m.os.environ['OMP_NUM_THREADS'] = '8'; m.worker_init(); "
+            "assert m.os.environ['OMP_NUM_THREADS'] == '1'")
+    subprocess.run([sys.executable, "-I", "-c", code], env=env, check=True)
+
+
+def test_d_guard_raises():
+    import ssg_equiv as se
+    from subgroups import t_subgroups
+    for fn in (t_subgroups, se.q_generic, se.Prep):
+        with pytest.raises(ValueError, match="d = 1"):
+            fn({"d": 4})
+
+
+def test_load_records(tmp_path):
+    from ssg_equiv import load_records, load_d1
+    (tmp_path / "sg001.json").write_text(json.dumps({"groups": {
+        "1.1.1.1": {"d": 1}, "1.2.1.1": {"d": 2}}}))
+    records = load_records(1, tmp_path)
+    assert records == {"1.1.1.1": {"d": 1, "label": "1.1.1.1"}}
+    assert load_records(1, tmp_path) is records
+    assert load_d1(tmp_path) is records
+    assert list(load_records(2, tmp_path)) == ["1.2.1.1"]
+
+
+def test_summary_seconds_after_resume(tmp_path, monkeypatch):
+    import make_subgroup_fixtures as m
+
+    class SerialPool:
+        def __init__(self, jobs, initializer):
+            assert jobs == 4
+            initializer()
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def imap_unordered(self, fn, labels):
+            return map(fn, labels)
+
+    monkeypatch.setattr(m.multiprocessing, "Pool", SerialPool)
+    calls = []
+    def fixture(label):
+        calls.append(label)
+        return dict(label=label, sym="synthetic", order=1, classes=[])
+    monkeypatch.setattr(m, "fixture", fixture)
+    ticks = iter([10, 11, 13, 15, 20, 23])
+    monkeypatch.setattr(m.time, "time", lambda: next(ticks))
+    m.main(["1.1.1.1", "--jobs", "16"], out=tmp_path)
+    prior = json.loads((tmp_path / "_summary.json").read_text())
+    m.main(["1.1.1.1", "--jobs", "16", "--resume"], out=tmp_path)
+    summary = json.loads((tmp_path / "_summary.json").read_text())
+    assert prior["seconds"] == prior["wall_seconds_this_run"] == 5
+    assert summary["wall_seconds_this_run"] == 3
+    assert summary["seconds"] == prior["seconds"] + summary["wall_seconds_this_run"] == 8
+    assert summary["jobs"] == 4
+    assert calls == ["1.1.1.1"]
