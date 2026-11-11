@@ -198,6 +198,10 @@ function report(bad: string[], total: number): string {
   return `${bad.length}/${total} mismatches; by space group: ${[...groups].map(([k, n]) => `${k}:${n}`).join(" ")}\n` + bad.slice(0, 30).join("\n");
 }
 
+// The two full sweeps take ~3 min each on an idle machine but much longer under load
+// (one run took 17 min), so they get their own generous limit instead of the global 300 s.
+const SWEEP_TIMEOUT = 1_800_000;
+
 describe.skipIf(!have)("standardise vs the BYU (3+1)D tables (local-only)", () => {
   it("(a) every record, after 3 seeded random setting changes, standardises to its own symbol", () => {
     const recs = allD1();
@@ -219,7 +223,7 @@ describe.skipIf(!have)("standardise vs the BYU (3+1)D tables (local-only)", () =
     expect(viaAlt).toBe(102);
     console.log(`(a) ${n} cases, BYU name is an alternate (not the primary) in ${viaAlt}`);
     expect(bad, report(bad, n)).toEqual([]);
-  });
+  }, SWEEP_TIMEOUT);
 
   it("(b) every k-index-1 subgroup class of every record standardises to its BYU type", () => {
     const recs = new Map(allD1().map((r) => [r.label, r]));
@@ -246,5 +250,5 @@ describe.skipIf(!have)("standardise vs the BYU (3+1)D tables (local-only)", () =
     expect(viaAlt).toBe(67);
     console.log(`(b) ${n} cases, BYU name is an alternate (not the primary) in ${viaAlt}`);
     expect(bad, report(bad, n)).toEqual([]);
-  });
+  }, SWEEP_TIMEOUT);
 });
