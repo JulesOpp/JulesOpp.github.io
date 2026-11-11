@@ -28,6 +28,7 @@ describe("standardise (public)", () => {
       expect(r.sgNumber).toBe(165);
       expect(r.symbol.full).toBe("P-3c1(0,0,g)000");
       expect(r.qActual).toBe("0,0,g");
+      expect(r.alternates).toEqual([]);
     }
   });
   it("P-3c1: its C2/c (index 3) subgroup class is monoclinic No. 15", () => {
@@ -161,6 +162,22 @@ function inv3(A: Q[][]): Q[][] {
   return M.map((r) => r.slice(3));
 }
 
+/**
+ * BYU's name must be the primary symbol or one of the reported alternates; when there are no
+ * alternates it must be the primary exactly (ties occur only where they are reported).
+ */
+function verdict(run: () => ReturnType<typeof standardise>, want: string): { ok: boolean; alt: boolean; got: string } {
+  try {
+    const s = run();
+    if (!isOk(s)) return { ok: false, alt: false, got: `fail ${s.reason}` };
+    const got = s.alternates.length ? `${s.symbol.full} [alt ${s.alternates.join(" ")}]` : s.symbol.full;
+    if (s.symbol.full === want) return { ok: true, alt: false, got };
+    return { ok: s.alternates.includes(want), alt: s.alternates.includes(want), got };
+  } catch (e) {
+    return { ok: false, alt: false, got: `throw ${(e as Error).message}` };
+  }
+}
+
 function report(bad: string[], total: number): string {
   const groups = new Map<string, number>();
   for (const b of bad) {
@@ -177,21 +194,18 @@ describe.skipIf(!have)("standardise vs the BYU (3+1)D tables (local-only)", () =
     const rnd = rng(20261110);
     const bad: string[] = [];
     let n = 0;
+    let viaAlt = 0;
     for (const r of recs) {
       const sg = Number(r.label.split(".")[0]);
       for (let k = 0; k < 3; k++) {
         n++;
         const { ops, q } = randomSetting(r, sg, rnd);
-        let got: string;
-        try {
-          const s = standardise(ops, [q]);
-          got = isOk(s) ? s.symbol.full : `fail ${s.reason}`;
-        } catch (e) {
-          got = `throw ${(e as Error).message}`;
-        }
-        if (got !== r.sym) bad.push(`${sg}\t${r.label}\t${r.sym}\t(q ${q})\tgot ${got}`);
+        const v = verdict(() => standardise(ops, [q]), r.sym);
+        if (v.alt) viaAlt++;
+        if (!v.ok) bad.push(`${sg}\t${r.label}\t${r.sym}\t(q ${q})\tgot ${v.got}`);
       }
     }
+    console.log(`(a) ${n} cases, BYU name is an alternate (not the primary) in ${viaAlt}`);
     expect(bad, report(bad, n)).toEqual([]);
   });
 
@@ -201,6 +215,7 @@ describe.skipIf(!have)("standardise vs the BYU (3+1)D tables (local-only)", () =
     expect(files).toHaveLength(775);
     const bad: string[] = [];
     let n = 0;
+    let viaAlt = 0;
     for (const f of files) {
       const fx = JSON.parse(readFileSync(join(SUBS, f), "utf8"));
       const parent = recs.get(fx.label)!;
@@ -209,17 +224,14 @@ describe.skipIf(!have)("standardise vs the BYU (3+1)D tables (local-only)", () =
         n++;
         const keep = new Set((cls.pg_ops as number[]).map((i) => splitOp(ops[i], 1).R.join(";")));
         const H = ops.filter((o) => keep.has(splitOp(o, 1).R.join(";")));
-        let got: string;
-        try {
-          const s = standardise(H, parent.q);
-          got = isOk(s) ? s.symbol.full : `fail ${s.reason}`;
-        } catch (e) {
-          got = `throw ${(e as Error).message}`;
-        }
-        if (got !== cls.byu_sym) bad.push(`${cls.byu.split(".")[0]}\t${fx.label} ${fx.sym} [${cls.pg_ops}]\t${cls.byu_sym}\tgot ${got}`);
+        const v = verdict(() => standardise(H, parent.q), cls.byu_sym);
+        if (v.alt) viaAlt++;
+        const got = v.got;
+        if (!v.ok) bad.push(`${cls.byu.split(".")[0]}\t${fx.label} ${fx.sym} [${cls.pg_ops}]\t${cls.byu_sym}\tgot ${got}`);
       }
     }
     expect(n).toBe(8204);
+    console.log(`(b) ${n} cases, BYU name is an alternate (not the primary) in ${viaAlt}`);
     expect(bad, report(bad, n)).toEqual([]);
   });
 });

@@ -23,11 +23,12 @@
 //     every residue modulo the translation denominators is tried.
 //  5. The transformed group must follow BYU's lattice convention (no centring translation has an
 //     internal component); its symbol is ssgSymbolInAxes. Among the candidates (all the same
-//     group) the choice rule in `choose` picks one; it was fitted to the BYU tables (test (a):
+//     group) the choice rule in `rank` picks one; it was fitted to the BYU tables (test (a):
 //     every record in 3 random settings; test (b): all 8204 k-index-1 subgroup classes).
-//     Known gap: for 14 orthorhombic setting pairs related by a <-> b (q along c), BYU's choice
-//     follows no rule found here (e.g. it writes Pcn2 rather than Pnc2, but Pmc2_1 rather than
-//     Pcm2_1), and the IT A order of settings is used.
+//     Ties: with q along c, an orthorhombic group may be written equally well in two settings
+//     related by a <-> b (e.g. Pnc2 / Pcn2). The primary name uses the IT A Table 4.3.2.1 order of
+//     settings; the other names are returned in `alternates`. BYU's own choice between such
+//     names follows no rule found here, so callers should accept any of primary + alternates.
 
 import { gcd, matInv, matMul, Q, type QMat, type QVec } from "./rational";
 import { identify, numToQ, type Op3 } from "./identify";
@@ -46,6 +47,8 @@ export interface Standardised {
   eta: 1 | -1;
   m: number[];
   p4: string;
+  /** Full symbols of the same type in the other tied settings (sorted, without the primary). */
+  alternates: string[];
 }
 
 const Z = Q.ZERO;
@@ -79,8 +82,9 @@ const Q_FORMS: Record<string, string[]> = {
 /**
  * From the IT A standard setting (moyo) to the axes BYU writes symbols in, in order of
  * preference. Coordinate maps x' = B x. Monoclinic: unique axis b -> c (a' = a, b' = c,
- * c' = -b; C 1 2/c 1 -> B 1 1 2/b). Orthorhombic: the six IT A settings abc, ba-c, -cba, bca,
- * cab, a-cb ("q along the standard c, then a, then b").
+ * c' = -b; C 1 2/c 1 -> B 1 1 2/b). Orthorhombic: the six IT A settings in the column order of
+ * IT A Table 4.3.2.1: abc, ba-c, cab, -cba, bca, a-cb. This order decides the primary name when
+ * two settings give the same type (see `alternates`).
  */
 const B_SETTINGS: Record<CrystalSystem, number[][][]> = {
   triclinic: [[[1, 0, 0], [0, 1, 0], [0, 0, 1]]],
@@ -88,9 +92,9 @@ const B_SETTINGS: Record<CrystalSystem, number[][][]> = {
   orthorhombic: [
     [[1, 0, 0], [0, 1, 0], [0, 0, 1]], // abc
     [[0, 1, 0], [1, 0, 0], [0, 0, -1]], // ba-c
+    [[0, 0, 1], [1, 0, 0], [0, 1, 0]], // cab
     [[0, 0, -1], [0, 1, 0], [1, 0, 0]], // -cba
     [[0, 1, 0], [0, 0, 1], [1, 0, 0]], // bca
-    [[0, 0, 1], [1, 0, 0], [0, 1, 0]], // cab
     [[1, 0, 0], [0, 0, -1], [0, 1, 0]], // a-cb
   ],
   tetragonal: [[[1, 0, 0], [0, 1, 0], [0, 0, 1]]],
@@ -489,12 +493,12 @@ function letterOrder(system: CrystalSystem, n: number): number[] {
 
 /**
  * Choice rule among the candidates (all are the same group in BYU axes):
- *  1. setting: lowest index in B_SETTINGS (IT A order of the orthorhombic settings);
+ *  1. setting: lowest index in B_SETTINGS (IT A Table 4.3.2.1 order of the orthorhombic settings);
  *  2. phase letters: smallest by value, compared in letterOrder;
  *  3. then the simplest q' and map: fewest minus signs and non-zero constants in q', eta = +1,
  *     smallest |m|.
  */
-function choose(list: Candidate[], system: CrystalSystem): Candidate {
+function rank(list: Candidate[], system: CrystalSystem): Candidate[] {
   const nz = (c: Candidate) => c.qActual.split(",").filter((x) => /\d/.test(x) && x !== "0").length;
   const cmp = (a: Candidate, b: Candidate) => {
     if (a.bIndex !== b.bIndex) return a.bIndex - b.bIndex;
@@ -508,7 +512,7 @@ function choose(list: Candidate[], system: CrystalSystem): Candidate {
     const neg = (c: Candidate) => c.qActual.split("-").length;
     return neg(a) - neg(b) || nz(a) - nz(b) || b.eta - a.eta || a.m.reduce((s, x) => s + Math.abs(x.toNumber()), 0) - b.m.reduce((s, x) => s + Math.abs(x.toNumber()), 0);
   };
-  return [...list].sort(cmp)[0];
+  return [...list].sort(cmp);
 }
 
 /**
@@ -519,7 +523,14 @@ export function standardise(ops: SOp[], Qtext: string[]): Standardised | { ok: f
   const c = candidates(ops, Qtext);
   if ("ok" in c) return c;
   if (!c.list.length) return { ok: false, reason: "no standard setting with a (3+1)D Bravais-class q form" };
-  const best = choose(c.list, crystalSystemOf(c.sgNumber));
+  const ranked = rank(c.list, crystalSystemOf(c.sgNumber));
+  const best = ranked[0];
+  // the best name in every other setting that writes the same type with the same q form
+  const firstPerSetting = new Map<number, Candidate>();
+  for (const x of ranked) if (!firstPerSetting.has(x.bIndex)) firstPerSetting.set(x.bIndex, x);
+  const alternates = [...new Set([...firstPerSetting.values()]
+    .filter((x) => x.symbol.q === best.symbol.q && x.symbol.full !== best.symbol.full)
+    .map((x) => x.symbol.full))].sort();
   return {
     ok: true,
     sgNumber: c.sgNumber,
@@ -530,5 +541,6 @@ export function standardise(ops: SOp[], Qtext: string[]): Standardised | { ok: f
     eta: best.eta,
     m: best.m.map((x) => Number(x.n)),
     p4: "0",
+    alternates,
   };
 }
