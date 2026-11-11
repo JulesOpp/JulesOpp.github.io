@@ -86,3 +86,28 @@ These make every field reproducible byte for byte. `exact.py` is the executable 
 
 * Python: `/opt/anaconda3/bin/python3 -I` (spglib 2.7, numpy, sympy). Tests: `... -m pytest`.
 * Node 24: `npm test` (vitest) and `npm run build` (esbuild → `../../assets/blog/ssg-finder/`).
+
+## 5. Subgroup fixture (`local/fixtures/subgroups/<label>.json`, written by `reference/make_subgroup_fixtures.py`)
+
+The k-index-1 (translationengleiche) subgroups of a (3+1)D group (d = 1 only), one row per conjugacy class, each identified with its BYU type. These are the full preimages of the subgroups of the basic point group K, so classes correspond to K-conjugacy classes of subgroups of K.
+
+```jsonc
+{ "label": "165.1.24.1", "sym": "P-3c1(0,0,g)000", "order": 12,   // order = |K|
+  "classes": [                    // sorted by (index, byu label as a tuple of ints, pg_ops)
+    { "pg_ops": [0, 1, 3, 6, 8, 9], // canonical-list indices (§1) of the parent: for each point operation of
+                                    // the class representative, the first op with that linear part; sorted
+      "index": 2,                   // |K| / |subgroup|  (t-index; k-index is 1)
+      "class_size": 1,              // number of K-conjugates
+      "byu": "150.1.24.1", "byu_sym": "P321(0,0,g)000",
+      // the map from the subgroup (parent setting, parent's generic q) onto the BYU record:
+      // x' = P x + p,  x4' = m·x + eta x4 + p4
+      "P": [["1","0","0"],["0","1","0"],["0","0","1"]], "p": ["0","0","-1/4"],
+      "eta": 1, "m": [0,0,0], "p4": "0" } ] }
+```
+
+* **Representative.** Among the conjugates in a class, the one whose `pg_ops` list is lexicographically smallest.
+* **Identification** (`reference/ssg_equiv.py`, `equivalent`). The subgroup, at the parent's generic q (the §3.1 values `3001/10007, 4723/10007, 7177/10007` for the parameters in order), is tested against every d = 1 record with the same basic space-group number. Exactly one must match; the type's q is then `q' = (eta q + m) P⁻¹`, a member of the BYU q family (not reduced modulo L*). The map is one valid choice, not a canonical one: `P`, `p`, `m` are not unique. `m` is an integer row; `p` is not reduced into [0,1).
+* **Equivalence.** `S = [[P, 0], [m, eta]]` maps Σ_A onto Σ_B, `S g S⁻¹` lies in B modulo Σ_B for every g in A, and q' lies in B's q family exactly. P is searched as `T_B⁻¹ N T_A`, where `T` is spglib's standardisation and N runs over integer matrices with entries in −2..2, det ±1, that normalise the standard point group and keep the standard centred lattice (one N per coset N·K). Then m and (p, p4) are solved from mixed real/integer congruences with the Smith normal form.
+* `_summary.json` in the same folder is a run log (per-group class counts, timings, any unidentified classes), not a fixture.
+* Tests: `reference/test_subgroups.py` runs a representative subset (every Bravais class, plus 14, 15, 62, 165, 194); `SSG_FULL=1` runs the sweep over all 775 (3+1)D records.
+* Generation: `make_subgroup_fixtures.py [--resume]` uses at most 4 worker processes by default (`--jobs` or `SSG_JOBS` to change); `--resume` keeps complete fixtures. All 775 take roughly 4–5 minutes on 4 cores.
