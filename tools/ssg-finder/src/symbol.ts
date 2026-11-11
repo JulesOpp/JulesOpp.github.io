@@ -360,17 +360,31 @@ export function settingSymbol(ops: Op3[], parentSystem: CrystalSystem): string |
  * reduce every n/m ("F 4/m -3 2/m" -> "Fm-3m"), "-3 2/m" becomes "-3m", and "R ... 1" drops the trailing 1.
  */
 export function itShortForm(setting: string): string {
+  const { cen, tokens } = shortTokens(setting);
+  return cen + tokens.map((t) => t.token.replace(/_/g, "")).join("");
+}
+
+/**
+ * The short-form decision behind itShortForm, with screw underscores kept ("4_2/m") and the
+ * symmetry-direction position (index into the space-separated tokens after the centring) of
+ * every kept token, e.g. "P 1 1 2_1/b" -> [{pos 2, "2_1/b"}], "P 2_1/b 2_1/n 2/m" -> b, n, m.
+ */
+export function shortTokens(setting: string): { cen: string; tokens: { pos: number; token: string }[] } {
   const [cen, ...rest] = setting.split(/\s+/).filter(Boolean);
-  let ax = rest.map((a) => a.replace(/_/g, ""));
-  if (ax.filter((a) => a !== "1").length === 1) return cen + ax.filter((a) => a !== "1").join("");
-  const cubic = ax.length === 3 && /^-?3$/.test(ax[1]);
-  const slashes = ax.filter((a) => a.includes("/")).length;
-  if (ax.every((a) => a.includes("/")) || (slashes >= 2 && (cubic || /^[46]/.test(ax[0]))) || (slashes >= 1 && ax[0] === "-3")) {
-    ax = ax.map((a, i) => (!a.includes("/") || (i === 0 && !cubic && /^[46]/.test(a)) ? a : a.split("/")[1]));
+  let ax = rest.map((a, pos) => ({ pos, token: a }));
+  const non1 = ax.filter((a) => a.token !== "1");
+  if (non1.length === 1) return { cen, tokens: non1 };
+  const cubic = ax.length === 3 && /^-?3$/.test(ax[1].token);
+  const has = (a: { token: string }) => a.token.includes("/");
+  const slashes = ax.filter(has).length;
+  if (ax.every(has) || (slashes >= 2 && (cubic || /^[46]/.test(ax[0].token))) || (slashes >= 1 && ax[0].token === "-3")) {
+    ax = ax.map((a, i) =>
+      !has(a) || (i === 0 && !cubic && /^[46]/.test(a.token)) ? a : { pos: a.pos, token: a.token.split("/")[1] },
+    );
   }
-  if (cen.startsWith("R") && ax.length === 3 && ax[2] === "1") ax = ax.slice(0, 2);
-  return cen + ax.join("");
+  if (cen.startsWith("R") && ax.length === 3 && ax[2].token === "1") ax = ax.slice(0, 2);
+  return { cen, tokens: ax };
 }
 
 // re-exported for tests
-export const _internal = { glideName, centringSymbol };
+export const _internal = { glideName, centringSymbol, sense, shortestAlong, parallel };
