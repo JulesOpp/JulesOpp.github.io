@@ -113,7 +113,7 @@ export function runFinder(rec: GroupRecord, rawParams: Record<string, string>): 
   } catch (e) {
     throw new FinderError(e instanceof Error ? e.message : String(e));
   }
-  const system = crystalSystemOf(Number((rec.label ?? "").split(".")[0]) || guessSg(rec));
+  const system = crystalSystemOf(Number((rec.label ?? "").split(".")[0]) || rec.sgNumber || guessSg(rec));
   const basis = [[ex.N[0], 0, 0], [0, ex.N[1], 0], [0, 0, ex.N[2]]];
 
   const classes: ClassResult[] = ex.classes.map((c: TClass) => {

@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadMoyo } from "../src/moyo";
-import { runSubgroups, SubgroupError } from "../src/subfinder";
+import { keep, runSubgroups, SubgroupError, type SubRow } from "../src/subfinder";
 
 beforeAll(async () => {
   await loadMoyo();
@@ -54,6 +54,16 @@ describe("runSubgroups (P-3c1(0,0,g)000)", () => {
     expect(() => runSubgroups(P3C1, { kIndex: 2 })).toThrow("only k-index 1 is supported for now");
     const d2 = page(["0,0,g", "0,0,h"], ["x,y,z,t,u", "y,-x+y,-z,-t,-u"]);
     expect(() => runSubgroups(d2, { kIndex: 1 })).toThrow("only d = 1 is supported for now");
+  });
+});
+
+describe("keep", () => {
+  it("rows with an unidentified type pass every filter", () => {
+    const r: SubRow = {
+      index: 2, tIndex: 2, kIndex: 1, classSize: 1, maximal: true, pointGroup: "?", sgNumber: 0, sgSymbol: "?",
+      inParentAxes: null, type: null, generators: [],
+    };
+    expect(keep(r, { kIndex: 1, pointGroup: "321", system: "cubic", centring: "F" })).toBe(true);
   });
 });
 

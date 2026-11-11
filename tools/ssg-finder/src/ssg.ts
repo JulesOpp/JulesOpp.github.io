@@ -16,6 +16,8 @@ export interface GroupRecord {
   cen: string[];
   gen: string[];
   nops?: number;
+  /** Basic space-group number, for records without a label (e.g. a subgroup sent from the subgroup page). */
+  sgNumber?: number;
 }
 
 /** A superspace operation x' = W x + w, W integer (3+d)×(3+d), w rational in [0,1). */

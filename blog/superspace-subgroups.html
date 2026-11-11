@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Superspace Subgroups · Julius Oppenheim</title>
+  <meta name="description" content="List the k-index-1 (translationengleiche) subgroups of a (3+1)D superspace group and name their types, in the browser">
+  <link rel="stylesheet" href="../assets/style.css">
+  <link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+  <script src="../assets/theme.js"></script>
+<style>
+/* Superspace Group Finder. Colours come from the site tokens; the two
+   warning colours are local and follow the same light/dark pattern. */
+:root { --ssgf-warn: #8a4500; --ssgf-warn-bg: #fff6e8; --ssgf-err: #b42318; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ssgf-warn: #f3b562; --ssgf-warn-bg: #2b2215; --ssgf-err: #ff8a80; }
+}
+:root[data-theme="dark"] { --ssgf-warn: #f3b562; --ssgf-warn-bg: #2b2215; --ssgf-err: #ff8a80; }
+
+.ssgf { margin: 1.5rem 0 2rem; min-width: 0; }
+.ssgf fieldset { border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 1rem; padding: 0.75rem 1rem 1rem; min-width: 0; }
+.ssgf legend { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); padding: 0 0.4rem; }
+.ssgf p { margin: 0.4rem 0; }
+.ssgf label { font-size: 0.92rem; }
+.ssgf input[type="text"], .ssgf textarea {
+  font: 0.88rem var(--mono); color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 6px; padding: 0.3rem 0.45rem; max-width: 100%; }
+.ssgf input[type="text"]:focus, .ssgf textarea:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: var(--accent); }
+.ssgf input[aria-invalid="true"] { border-color: var(--ssgf-err); }
+.ssgf textarea { display: block; width: 100%; min-height: 7rem; resize: vertical; font-size: 0.8rem; }
+.ssgf button { font: inherit; font-size: 0.9rem; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 6px; padding: 0.3rem 0.75rem; cursor: pointer; }
+.ssgf button:hover { border-color: var(--accent); }
+.ssgf button.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.ssgf button:disabled { opacity: 0.5; cursor: default; }
+.ssgf .row { display: flex; flex-wrap: wrap; gap: 0.5rem 0.75rem; align-items: center; margin: 0.4rem 0; }
+.ssgf #ssgf-label { width: 11rem; }
+.ssgf form[hidden], .ssgf [hidden] { display: none !important; }
+.ssgf .mono { font-family: var(--mono); font-size: 0.86em; }
+.ssgf .muted, .ssgf .note { color: var(--muted); }
+.ssgf .nw { white-space: nowrap; }
+.ssgf .err { color: var(--ssgf-err); }
+.ssgf-msg { font-size: 0.9rem; min-height: 1.4em; color: var(--muted); }
+.ssgf-msg.err { color: var(--ssgf-err); }
+.ssgf-dl, .ssgf-group { margin: 0.5rem 0 0; display: grid; gap: 0.2rem; font-size: 0.9rem; }
+.ssgf-dl > div, .ssgf-group > div { display: grid; grid-template-columns: 11rem minmax(0, 1fr); gap: 0 0.75rem; }
+.ssgf-dl dt, .ssgf-group dt { color: var(--muted); }
+.ssgf-dl dd, .ssgf-group dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.ssgf-prow { display: grid; grid-template-columns: 9rem 8rem minmax(0, 1fr); gap: 0.25rem 0.75rem; align-items: center; margin: 0.35rem 0; }
+.ssgf-prow input { width: 100%; }
+.ssgf-perr { font-size: 0.82rem; color: var(--ssgf-err); }
+.ssgf-spin { display: inline-block; width: 0.9em; height: 0.9em; vertical-align: -0.1em; border: 2px solid var(--line);
+  border-top-color: var(--accent); border-radius: 50%; animation: ssgf-spin 0.8s linear infinite; }
+@keyframes ssgf-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ssgf-spin { animation-duration: 3s; } }
+.ssgf-warn { border: 1px solid var(--ssgf-warn); background: var(--ssgf-warn-bg); color: var(--ssgf-warn);
+  border-radius: 6px; padding: 0.6rem 0.9rem; margin: 0.75rem 0; font-size: 0.92rem; }
+.ssgf-warn ul { margin: 0.25rem 0 0; padding-left: 1.2rem; }
+.ssgf-head { font-size: 0.92rem; overflow-wrap: anywhere; }
+.ssgf-sum { max-height: none; margin: 0.75rem 0; }
+.ssgf-sum th[scope="row"] { position: sticky; left: 0; background: var(--bg-soft); font-weight: 600; white-space: nowrap; }
+.ssgf-sum td { vertical-align: top; }
+.ssgf-sum td.lw { white-space: normal; min-width: 9rem; max-width: 16rem; }
+.ssgf table .sym, .ssgf .sym { font-family: "Times New Roman", Times, serif; font-style: italic; font-size: 1.05em; white-space: nowrap; }
+.ssgf .sym sub { font-style: normal; }
+.ssgf .ovl { text-decoration: overline; }
+.ssgf-actions { margin: 0.5rem 0 1rem; }
+.ssgf-card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); box-shadow: var(--shadow);
+  padding: 0.75rem 1rem; margin: 0.9rem 0; min-width: 0; }
+.ssgf-card h3 { margin: 0 0 0.4rem; color: var(--fg); font-size: 1.05rem; }
+.ssgf-card details { margin: 0.6rem 0 0; }
+.ssgf-card summary { font-size: 0.9rem; }
+.ssgf-card pre { font-size: 0.8rem; margin: 0.5rem 0; }
+.ssgf-card .table-scroll { max-height: 20rem; }
+.eqn { overflow-x: auto; }
+@media (max-width: 640px) {
+  .ssgf fieldset { padding: 0.6rem 0.7rem 0.8rem; }
+  .ssgf-dl > div, .ssgf-group > div { grid-template-columns: minmax(0, 1fr); }
+  .ssgf-prow { grid-template-columns: 6rem minmax(0, 1fr); }
+  .ssgf-perr { grid-column: 1 / -1; }
+  .ssgf-card { padding: 0.65rem 0.75rem; }
+}
+/* Subgroup page (shares the finder's styles above). */
+.ssgs-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 0.4rem 1rem; }
+.ssgs-filters .row { margin: 0.2rem 0; }
+.ssgf select { font: inherit; font-size: 0.9rem; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 6px; padding: 0.2rem 0.35rem; max-width: 100%; }
+.ssgf select:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: var(--accent); }
+.ssgs-table { max-height: none; }
+.ssgs-table td { vertical-align: top; }
+.ssgs-table .alt { font-size: 0.85em; color: var(--muted); margin-top: 0.15rem; }
+.ssgf button.ssgs-x { border: none; background: none; padding: 0 0.2rem; color: var(--accent); font-size: 0.82rem; }
+.ssgf button.ssgs-x:hover { text-decoration: underline; }
+.ssgs-det > td { background: var(--bg-soft); white-space: normal; }
+.ssgs-detbox { position: sticky; left: 0; max-width: min(40rem, calc(100vw - 4rem)); }
+.ssgs-detbox p { margin: 0.3rem 0; }
+.ssgs-detbox pre { margin: 0.3rem 0; font-size: 0.8rem; white-space: pre; overflow-x: auto; }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap">
+    <a class="site-name" href="../index.html">Julius Oppenheim</a>
+    <nav class="site-nav" aria-label="Main">
+      <a href="../index.html">Home</a>
+      <a href="../publications.html">Publications</a>
+      <a href="../software.html">Software</a>
+      <a href="../water-database.html">Water Database</a>
+      <a href="../blog/index.html" aria-current="page">Blog</a>
+      <a href="../cv.html">CV</a>
+      <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light and dark mode" hidden><svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v2.5M12 20v2.5M1.5 12H4M20 12h2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8"/></svg><svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"/></svg></button>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+    <article class="prose">
+    <h1>Superspace Subgroups</h1>
+    <p class="date"><time datetime="2026-11-10">November 10, 2026</time></p>
+    <p>This page lists the subgroups of a (3+1)D superspace group that keep its
+    full superspace lattice: the subgroups of k-index 1, also called
+    translationengleiche subgroups. It follows the layout of CELLSUB on the
+    <a href="https://www.cryst.ehu.es/">Bilbao Crystallographic Server</a>, one
+    row per conjugacy class, and names the type of each subgroup in the style
+    of the <a href="https://iso.byu.edu/ssg.php">ISO(3+d)D project at BYU</a>.
+    It is a companion to the <a href="superspace-group-finder.html">Superspace
+    Group Finder</a>: any row can be sent there to find the 3D space groups of
+    its commensurate sections.</p>
+    <p><b>Scope for now:</b> d = 1 (one modulation vector) and k-index 1 only.
+    Subgroups that lose lattice translations (k-index &gt; 1) and groups with
+    d = 2 or 3 are refused rather than answered wrongly.</p>
+    <p><b>How to use.</b> The superspace-group tables belong to the ISO(3+d)D
+    project at BYU and are not distributed with this page. As on the finder,
+    open the group's BYU page, select everything (Cmd-A or Ctrl-A), copy it and
+    paste it below, then press <i>List subgroups</i>. Everything is run locally
+    in your browser.</p>
+    </article>
+
+    <section class="ssgf" id="ssgs" aria-label="Superspace subgroups">
+      <fieldset>
+        <legend>1 · Group</legend>
+        <div class="row">
+          <label for="ssgs-label">Superspace group label</label>
+          <input id="ssgs-label" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. 165.1.24.1" aria-describedby="ssgs-byu-note" style="width: 11rem">
+          <form id="ssgs-byu" method="post" action="https://iso.byu.edu/ssginfoform.php" target="_blank" hidden>
+            <input type="hidden" name="label" id="ssgs-byu-label" value="">
+            <input type="hidden" name="notation" value="xyzt">
+            <input type="hidden" name="supercenter" value="true">
+            <button type="submit">Open BYU page ↗</button>
+          </form>
+          <span class="note" id="ssgs-byu-note">Labels look like 165.1.24.1 (ISO(3+d)D numbering).</span>
+        </div>
+        <label for="ssgs-paste">Paste the whole BYU group page here</label>
+        <textarea id="ssgs-paste" spellcheck="false" autocomplete="off" aria-describedby="ssgs-paste-status" placeholder="Superspace group: 165.1.24.1 P-3c1(0,0,g)000 …"></textarea>
+        <p class="ssgf-msg" id="ssgs-paste-status" aria-live="polite"></p>
+      </fieldset>
+
+      <form id="ssgs-form" novalidate>
+        <fieldset>
+          <legend>2 · Subgroups</legend>
+          <div class="row">
+            <label for="ssgs-k">k-index</label>
+            <select id="ssgs-k" aria-describedby="ssgs-k-note">
+              <option value="1" selected>1</option>
+              <option value="2" disabled>2</option>
+              <option value="3" disabled>3</option>
+              <option value="4" disabled>4</option>
+            </select>
+            <span class="note" id="ssgs-k-note">Only k-index 1 for now.</span>
+          </div>
+          <p class="note">Optional filters (applied to the listed classes; rows whose type could not be identified are always shown):</p>
+          <div class="ssgs-filters">
+            <div class="row"><input type="checkbox" id="ssgs-onlyk" checked><label for="ssgs-onlyk">Only this k-index</label></div>
+            <div class="row"><label for="ssgs-pg">Point group</label>
+              <select id="ssgs-pg"><option value="">any</option></select></div>
+            <div class="row"><label for="ssgs-sys">Crystal system</label>
+              <select id="ssgs-sys">
+                <option value="">any</option>
+                <option value="triclinic">triclinic</option>
+                <option value="monoclinic">monoclinic</option>
+                <option value="orthorhombic">orthorhombic</option>
+                <option value="tetragonal">tetragonal</option>
+                <option value="trigonal">trigonal</option>
+                <option value="hexagonal">hexagonal</option>
+                <option value="cubic">cubic</option>
+              </select></div>
+            <div class="row"><label for="ssgs-cen">Centring</label>
+              <select id="ssgs-cen">
+                <option value="">any</option>
+                <option>P</option><option>A</option><option>B</option><option>C</option>
+                <option>I</option><option>F</option><option>R</option>
+              </select></div>
+          </div>
+          <div class="row">
+            <button type="submit" class="primary" id="ssgs-run" disabled>List subgroups</button>
+            <span class="ssgf-msg" id="ssgs-run-status" aria-live="polite"></span>
+          </div>
+        </fieldset>
+      </form>
+
+      <div id="ssgs-results" aria-live="polite"></div>
+      <noscript><p>This tool needs JavaScript and WebAssembly.</p></noscript>
+    </section>
+
+    <article class="prose">
+    <h2>Reading the table</h2>
+    <ul>
+      <li><b>Index</b> is the index of the subgroup H in the parent G. With
+      k-index 1 it equals the t-index, the index of the point group of H in that
+      of G.</li>
+      <li><b>Point group</b> and <b>Basic SG</b> are those of H's basic space
+      group, in the type's setting (number in brackets as in International
+      Tables A).</li>
+      <li><b>Superspace group (type)</b> is the type of H, written as BYU writes
+      it: the q family of the Bravais class in letters (a, b, g) and one phase
+      letter per symmetry direction (0, s = 1/2, t = 1/3, q = 1/4, h = 1/6).
+      Where several orthorhombic settings are tied, the other names are given
+      after ≡; they are the same type.</li>
+      <li><b>q</b> is the subgroup's own modulation vector in that setting, a
+      member of the type's q family (for example (0,0,g) in a P-1(a,b,g) type).</li>
+      <li><b>Conjugates</b> is the number of subgroups in the conjugacy class;
+      <b>Maximal</b> says whether no other k-index-1 subgroup lies between H and G.</li>
+      <li><b>Transformation</b> gives the coordinates (x′, y′, z′; t′) of the
+      type's setting in terms of the parent's (x, y, z; t). Press the index to
+      see the generators of H in the parent's axes, its symbol in those axes
+      when the crystal system is unchanged, and the <i>Send to finder</i> link.</li>
+    </ul>
+
+    <h2>Method</h2>
+    <p>Write the point group of G as pairs (R, ε) with R its 3D rotation and
+    ε = ±1 its action on the internal coordinate. For an incommensurate q the
+    pair (1, −1) is never in this group, so ε is a function of R and the point
+    group is isomorphic to the point group K of the basic space group. A
+    subgroup of G with the same superspace lattice is then the full preimage of
+    a subgroup P of K, and two such subgroups are conjugate in G exactly when
+    their P are conjugate in K. So the rows are the conjugacy classes of
+    subgroups of K, and q is unchanged.</p>
+    <p>Each subgroup is identified from its operations: the basic space group
+    by <a href="https://github.com/spglib/moyo">moyo</a> (compiled to
+    WebAssembly), then a search over settings of that space group for the one
+    that brings q into a Bravais-class q form of International Tables C
+    (Table 9.8.3), in the axis and lattice conventions used by ISO(3+d)D.
+    Among the equivalent names that remain, a fixed choice rule picks one.
+    The type names are worked out by this algorithm, not looked up; the rule
+    was checked offline against the ISO(3+d)D listings. If a subgroup cannot be identified, its row says so and a
+    warning explains why.</p>
+
+    <h2>Limitations</h2>
+    <ul>
+      <li>d = 1 and k-index 1 only. CELLSUB's general subgroups (supercells and
+      changes of the internal lattice) are not yet handled.</li>
+      <li>Magnetic superspace groups are not handled.</li>
+      <li>The symbol in the parent's axes is only given when the subgroup keeps
+      the parent's crystal system.</li>
+    </ul>
+
+    <h2>Credits and references</h2>
+    <ul>
+      <li>H. T. Stokes, D. M. Hatch and B. J. Campbell, ISO(3+d)D, ISOTROPY Software
+      Suite, <a href="https://iso.byu.edu">iso.byu.edu</a>. The superspace-group
+      data you paste comes from here, and the type names follow its conventions.</li>
+      <li>H. T. Stokes, B. J. Campbell and S. van Smaalen, Generation of
+      (3+d)-dimensional superspace groups for describing the symmetry of modulated
+      crystalline structures, <i>Acta Cryst.</i> A<b>67</b>, 45–55 (2011),
+      <a href="https://doi.org/10.1107/S0108767310042297">doi:10.1107/S0108767310042297</a>.</li>
+      <li>S. van Smaalen, B. J. Campbell and H. T. Stokes, Equivalence of
+      superspace groups, <i>Acta Cryst.</i> A<b>69</b>, 75–90 (2013),
+      <a href="https://doi.org/10.1107/S0108767312041657">doi:10.1107/S0108767312041657</a>.</li>
+      <li>T. Janssen, A. Janner, A. Looijenga-Vos and P. M. de Wolff, Incommensurate
+      and commensurate modulated structures, <i>International Tables for
+      Crystallography</i> Vol. C, Section 9.8, for the q forms and
+      phase-shift letters.</li>
+      <li>CELLSUB, Bilbao Crystallographic Server,
+      <a href="https://www.cryst.ehu.es/">cryst.ehu.es</a>, for the layout of the
+      subgroup table.</li>
+      <li><a href="https://github.com/spglib/moyo">moyo</a>, from the spglib
+      project (MIT / Apache-2.0), for space-group identification; see
+      <a href="../assets/blog/ssg-finder/moyo_LICENSE.txt">its licence</a>.</li>
+    </ul>
+    <p><a href="../blog/index.html">← All posts</a></p>
+    </article>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <nav aria-label="Profiles">
+        <a href="mailto:juliuso@princeton.edu">Email</a>
+        <span>·</span>
+        <a href="https://scholar.google.com/citations?user=2yNJuKkAAAAJ&amp;hl=en">Google Scholar</a>
+        <span>·</span>
+        <a href="https://orcid.org/0000-0002-5988-0677">ORCID</a>
+        <span>·</span>
+        <a href="https://www.linkedin.com/in/julius-oppenheim-a59779283/">LinkedIn</a>
+        <span>·</span>
+        <a href="https://github.com/JulesOpp">GitHub</a>
+        <span>·</span>
+        <a href="https://bsky.app/profile/jules-oppenheim.bsky.social">Bluesky</a>
+    </nav>
+    <p>© 2026 Julius Oppenheim</p>
+  </div>
+</footer>
+
+<script type="module" src="../assets/blog/ssg-finder/ssgsub.js"></script>
+</body>
+</html>

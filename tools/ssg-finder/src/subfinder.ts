@@ -106,7 +106,9 @@ export function runSubgroups(raw: string, f: SubFilter): { parent: string; rows:
   return { parent: rec.sym, rows: rows.filter((r) => keep(r, f)), warnings };
 }
 
-function keep(r: SubRow, f: SubFilter): boolean {
+/** Filter test. Rows whose type could not be identified always pass (they carry a warning). */
+export function keep(r: SubRow, f: SubFilter): boolean {
+  if (r.type === null) return true;
   if (f.pointGroup && r.pointGroup !== f.pointGroup) return false;
   if (f.system && crystalSystemOf(r.sgNumber) !== f.system) return false;
   if (f.centring && r.type?.symbol.basic[0] !== f.centring) return false;

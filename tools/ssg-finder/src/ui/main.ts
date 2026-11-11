@@ -11,6 +11,7 @@ import {
   LABEL_RE, parsePaste, validateParam, encodeHash, decodeHash, compute, esc, symbolHtml, classSymbol,
   summaryColumns, subDigits, tText, transformText, supercellText, resultJson, exportName, storageKey,
 } from "./flow";
+import { SEND_KEY, decodeSent } from "./subflow";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string): T => {
   const el = document.getElementById(id);
@@ -96,6 +97,11 @@ function onPaste(): void {
       syncLabel();
     }
   }
+  showGroup(rec);
+}
+elPaste.addEventListener("input", onPaste);
+
+function showGroup(rec: GroupRecord): void {
   const qs = rec.q.map((q, i) => `<span class="nw">q${subDigits(i + 1)} = (${esc(q)})</span>`).join(", ");
   elGroup.innerHTML =
     `<div><dt>Group</dt><dd>${rec.label ? esc(rec.label) + " " : ""}<span class="mono">${esc(rec.sym)}</span></dd></div>` +
@@ -105,7 +111,26 @@ function onPaste(): void {
   elGroup.hidden = false;
   renderParams();
 }
-elPaste.addEventListener("input", onPaste);
+
+/** A subgroup sent from the subgroup page (sessionStorage, read once). Its operators are
+ *  in the parent's axes and were computed from the viewer's own paste there. */
+function receiveSubgroup(): boolean {
+  let text: string | null = null;
+  try {
+    text = sessionStorage.getItem(SEND_KEY);
+    sessionStorage.removeItem(SEND_KEY);
+  } catch {
+    return false;
+  }
+  const sent = decodeSent(text);
+  if (!sent) return false;
+  rec = sent;
+  elPaste.value = "";
+  elPasteStatus.className = "ssgf-msg";
+  elPasteStatus.textContent = "Loaded a subgroup from the subgroup page (operators in the parent group's axes). Paste a BYU page to replace it.";
+  showGroup(rec);
+  return true;
+}
 
 // ------------------------------------------------------------------ step 2: parameters
 
@@ -358,7 +383,7 @@ function restore(): void {
 
 syncLabel();
 renderParams();
-restore();
+if (!receiveSubgroup()) restore();
 window.addEventListener("hashchange", () => {
   const st = decodeHash(location.hash);
   if (st.label && (!rec || rec.label !== st.label || Object.entries(st.params).some(([k, v]) => currentParams()[k] !== v))) {

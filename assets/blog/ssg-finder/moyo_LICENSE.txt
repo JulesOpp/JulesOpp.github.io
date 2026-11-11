@@ -1,4 +1,4 @@
-moyo_wasm_bg.wasm and the moyo-wasm JavaScript bindings bundled in ssgf.js are
+moyo_wasm_bg.wasm and the moyo-wasm JavaScript bindings bundled in ssgf.js and ssgsub.js are
 @spglib/moyo-wasm 0.22.0 (https://github.com/spglib/moyo), dual-licensed
 MIT OR Apache-2.0, distributed here under the MIT licence:
 
