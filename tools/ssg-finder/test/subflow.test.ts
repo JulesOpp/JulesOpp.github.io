@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { loadMoyo } from "../src/moyo";
 import { parseByuPage } from "../src/paste";
 import { runSubgroups } from "../src/subfinder";
-import { affineText, decodeSent, subgroupRecord } from "../src/ui/subflow";
+import { affineText, decodeSent, displayMap, prepareSend, subgroupRecord } from "../src/ui/subflow";
 import { compute } from "../src/ui/flow";
 
 beforeAll(async () => {
@@ -23,6 +23,21 @@ describe("affineText", () => {
   });
 });
 
+describe("displayMap", () => {
+  it("reduces positive and negative origin shifts modulo the integer lattice without changing the map", () => {
+    const t = { P: [["1", "0", "0"], ["0", "1", "0"], ["0", "0", "1"]], p: ["0", "0", "1"], eta: 1 as const, m: [0, 0, 0], p4: "0" };
+    const before = structuredClone(t);
+    expect(displayMap(t).p).toEqual(["0", "0", "0"]);
+    expect(affineText(displayMap(t))).toBe("(x, y, z; t)");
+    expect(t).toEqual(before);
+    const shifted = { ...t, p: ["-1/4", "7/3", "-2"], p4: "-5/4" };
+    const saved = structuredClone(shifted);
+    expect(displayMap(shifted)).toEqual({ ...shifted, p: ["3/4", "1/3", "0"], p4: "3/4" });
+    expect(displayMap({ ...t, p4: "9/4" }).p4).toBe("1/4");
+    expect(shifted).toEqual(saved);
+  });
+});
+
 describe("send to finder", () => {
   let parent: ReturnType<typeof parseByuPage>;
   let parentSg: number;
@@ -32,6 +47,32 @@ describe("send to finder", () => {
     const out = runSubgroups(P3C1, { kIndex: 1 });
     rows = out.rows;
     parentSg = out.parentSgNumber;
+  });
+  it("reports a record-build error separately from browser storage", () => {
+    const row = { ...rows[0], generators: ["not an operator"] };
+    const out = prepareSend(parent, row, parentSg);
+    expect(out.ok).toBe(false);
+    if (out.ok) throw new Error("invalid generators were accepted");
+    expect(out.reason).toBeTruthy();
+    expect(out.reason).not.toMatch(/storage/i);
+  });
+  it("prepares a valid JSON record that round-trips", () => {
+    const row = rows.find((r) => r.sgNumber === 150)!;
+    const out = prepareSend(parent, row, parentSg);
+    expect(out.ok).toBe(true);
+    if (!out.ok) throw new Error(out.reason);
+    expect(decodeSent(out.json)).toEqual(subgroupRecord(parent, row, parentSg));
+  });
+  it("accepts the parsed record instead of reparsing the paste", () => {
+    const out = runSubgroups(parent, { kIndex: 1 });
+    expect(out.rows).toEqual(rows);
+    expect(out.parentSgNumber).toBe(parentSg);
+  });
+  it("reduces the C2/c display translation without changing its standardised map", () => {
+    const row = rows.find((r) => r.sgNumber === 15)!;
+    const before = structuredClone(row.type!);
+    expect(affineText(displayMap(row.type!))).not.toContain("z+1");
+    expect(row.type).toEqual(before);
   });
   it("round-trips the P321 subgroup through JSON and runs in the finder", () => {
     const row = rows.find((r) => r.sgNumber === 150)!;

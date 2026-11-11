@@ -38,6 +38,20 @@ export function affineText(t: Pick<Standardised, "P" | "p" | "eta" | "m" | "p4">
   return `(${ext.join(", ")}; ${int})`;
 }
 
+/** Display an equivalent map with origin shifts in [0, 1): integer shifts lie in Σ_B = Z^n. */
+export function displayMap(t: Pick<Standardised, "P" | "p" | "eta" | "m" | "p4">): typeof t {
+  return { ...t, p: t.p.map((x) => Q.parse(x).mod1().toString()), p4: Q.parse(t.p4).mod1().toString() };
+}
+
+/** Build the hand-over before attempting browser storage, so build errors remain distinct. */
+export function prepareSend(parent: GroupRecord, row: SubRow, sg: number): { ok: true; json: string } | { ok: false; reason: string } {
+  try {
+    return { ok: true, json: JSON.stringify(subgroupRecord(parent, row, sg)) };
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 /** The subgroup as a finder record: the parent's lattice, q and centrings, the subgroup's operators (parent axes). */
 export function subgroupRecord(parent: GroupRecord, row: SubRow, parentSgNumber: number): GroupRecord {
   const name = row.inParentAxes ?? (row.type ? row.type.symbol.full : "subgroup");

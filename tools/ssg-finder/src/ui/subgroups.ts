@@ -11,7 +11,7 @@ import type { GroupRecord } from "../ssg";
 import { keep, runSubgroups, SubgroupError, type SubFilter, type SubRow } from "../subfinder";
 import type { CrystalSystem } from "../symbol";
 import { LABEL_RE, esc, symbolHtml } from "./flow";
-import { SEND_KEY, affineText, subgroupRecord } from "./subflow";
+import { SEND_KEY, affineText, displayMap, prepareSend } from "./subflow";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string): T => {
   const el = document.getElementById(id);
@@ -48,6 +48,10 @@ interface State {
 }
 let state: State | null = null;
 let runId = 0;
+let pasted: GroupRecord | null = null;
+const supported = (rec: GroupRecord) => rec.d === 1;
+const expanded = new Set<string>();
+const rowKey = (row: SubRow) => JSON.stringify([...row.generators].sort());
 
 // ------------------------------------------------------------------ step 1: label + paste
 
@@ -65,7 +69,11 @@ elByu.addEventListener("submit", (e) => {
 });
 
 function onPaste(): void {
+  ++runId;
+  pasted = null;
   state = null;
+  expanded.clear();
+  elResults.removeAttribute("aria-busy");
   elResults.innerHTML = "";
   elRunStatus.textContent = "";
   const text = elPaste.value;
@@ -77,6 +85,7 @@ function onPaste(): void {
   }
   try {
     const rec = parseByuPage(text);
+    pasted = rec;
     if (rec.label && elLabel.value.trim() !== rec.label) {
       elLabel.value = rec.label;
       syncLabel();
@@ -84,7 +93,7 @@ function onPaste(): void {
     const dNote = rec.d === 1 ? "" : ` This group has d = ${rec.d}; only d = 1 is supported for now.`;
     elPasteStatus.innerHTML = `Read ${rec.label ? esc(rec.label) + " " : ""}<span class="mono">${esc(rec.sym)}</span>, ${rec.nops ?? "?"} operators.${esc(dNote)}`;
     elPasteStatus.className = rec.d === 1 ? "ssgf-msg" : "ssgf-msg err";
-    elRun.disabled = rec.d !== 1;
+    elRun.disabled = !supported(rec);
   } catch (e) {
     elPasteStatus.textContent = e instanceof PasteError ? e.message : "Could not read this text as a BYU group page: " + (e instanceof Error ? e.message : String(e));
     elPasteStatus.className = "ssgf-msg err";
@@ -109,12 +118,15 @@ const nextFrame = () =>
   });
 
 async function run(): Promise<void> {
+  const parent = pasted;
+  if (!parent || !supported(parent)) return;
   const id = ++runId;
   elRun.disabled = true;
   elRunStatus.innerHTML = '<span class="ssgf-spin" aria-hidden="true"></span> Computing…';
   elResults.setAttribute("aria-busy", "true");
   const done = (msg: string) => {
-    elRun.disabled = false;
+    if (id !== runId) return;
+    elRun.disabled = !(pasted && supported(pasted));
     elResults.removeAttribute("aria-busy");
     elRunStatus.innerHTML = msg;
   };
@@ -128,8 +140,7 @@ async function run(): Promise<void> {
   if (id !== runId) return;
   const t0 = performance.now();
   try {
-    const parent = parseByuPage(elPaste.value);
-    const out = runSubgroups(elPaste.value, { kIndex: Number(elK.value) });
+    const out = runSubgroups(parent, { kIndex: Number(elK.value) });
     state = { parent, parentSgNumber: out.parentSgNumber, name: out.parent, rows: out.rows, warnings: out.warnings, ms: performance.now() - t0 };
   } catch (e) {
     state = null;
@@ -197,17 +208,18 @@ function render(): void {
     `</tr></thead><tbody>`;
   rows.forEach((r, i) => {
     const did = `ssgs-det-${i}`;
+    const open = expanded.has(rowKey(r));
     h += `<tr>` +
-      `<td><button type="button" class="ssgs-x" aria-expanded="false" aria-controls="${did}" title="Show generators">` +
-      `<span aria-hidden="true">▸</span> ${r.index}</button></td>` +
+      `<td><button type="button" class="ssgs-x" aria-expanded="${open}" data-row="${s.rows.indexOf(r)}" aria-controls="${did}" title="Show generators">` +
+      `<span aria-hidden="true">${open ? "▾" : "▸"}</span> ${r.index}</button></td>` +
       `<td>${r.tIndex}</td><td>${r.kIndex}</td>` +
       `<td>${r.type ? sym(r.pointGroup) : "?"}</td>` +
       `<td>${r.type ? `${sym(r.sgSymbol)} <span class="muted">(${r.sgNumber})</span>` : "?"}</td>` +
       `<td class="ty">${typeCell(r)}</td>` +
       `<td class="mono">${r.type ? "(" + esc(r.type.qActual) + ")" : "?"}</td>` +
       `<td>${r.classSize}</td><td>${r.maximal ? "yes" : "no"}</td>` +
-      `<td class="mono">${r.type ? esc(affineText(r.type)) : "?"}</td></tr>`;
-    h += `<tr id="${did}" class="ssgs-det" hidden><td colspan="10"><div class="ssgs-detbox">` +
+      `<td class="mono">${r.type ? esc(affineText(displayMap(r.type))) : "?"}</td></tr>`;
+    h += `<tr id="${did}" class="ssgs-det"${open ? "" : " hidden"}><td colspan="10"><div class="ssgs-detbox">` +
       `<p><span class="muted">In the parent's axes:</span> ${r.inParentAxes ? sym(r.inParentAxes) : `<span class="muted">no symbol (different crystal system)</span>`}</p>` +
       `<p><span class="muted">Generators (parent axes, besides the lattice${s.parent.cen.length ? " and centring" : ""} translations):</span></p>` +
       `<pre>${r.generators.length ? esc(r.generators.join("\n")) : "none (only translations)"}</pre>` +
@@ -229,20 +241,63 @@ elResults.addEventListener("click", (e) => {
     det.hidden = !open;
     btn.setAttribute("aria-expanded", String(open));
     btn.querySelector("span")!.textContent = open ? "▾" : "▸";
+    const row = state?.rows[Number(btn.dataset.row)];
+    if (row) {
+      if (open) expanded.add(rowKey(row));
+      else expanded.delete(rowKey(row));
+    }
     return;
   }
-  const a = t.closest<HTMLAnchorElement>("a[data-send]");
-  if (a && state) {
-    const row = state.rows[Number(a.dataset.send)];
-    try {
-      sessionStorage.setItem(SEND_KEY, JSON.stringify(subgroupRecord(state.parent, row, state.parentSgNumber)));
-    } catch {
-      e.preventDefault();
-      const note = a.nextElementSibling as HTMLElement | null;
-      if (note) note.textContent = "Could not hand the subgroup over (browser storage is blocked).";
-    }
-  }
+  sendToFinder(e);
 });
+elResults.addEventListener("auxclick", (e) => {
+  if (e.button === 1) sendToFinder(e);
+});
+
+function sendToFinder(e: MouseEvent): void {
+  const a = (e.target as HTMLElement).closest<HTMLAnchorElement>("a[data-send]");
+  if (!a || !state) return;
+  const row = state.rows[Number(a.dataset.send)];
+  const out = prepareSend(state.parent, row, state.parentSgNumber);
+  const note = a.nextElementSibling as HTMLElement | null;
+  if (!out.ok) {
+    e.preventDefault();
+    if (note) note.textContent = `Could not build the subgroup record: ${out.reason}`;
+    return;
+  }
+  const middle = e.type === "auxclick" && e.button === 1;
+  if (middle) e.preventDefault();
+  try {
+    sessionStorage.setItem(SEND_KEY, out.json);
+  } catch {
+    e.preventDefault();
+    if (note) note.textContent = "Could not hand the subgroup over (browser storage is blocked).";
+    return;
+  }
+  if (middle) {
+    // Some browsers do not clone sessionStorage for middle-clicked links. Initialize a
+    // same-origin blank tab explicitly before navigating it to the finder.
+    let child: Window | null = null;
+    try {
+      child = window.open("about:blank", "_blank");
+    } catch {
+      // Treat an exception the same as the popup blocker's null result below.
+    }
+    if (!child) {
+      if (note) note.textContent = "Could not open the finder in a new tab (browser popups are blocked).";
+      return;
+    }
+    try {
+      child.sessionStorage.setItem(SEND_KEY, out.json);
+    } catch {
+      child.close();
+      if (note) note.textContent = "Could not hand the subgroup over (browser storage is blocked).";
+      return;
+    }
+    child.location.href = a.href;
+  }
+  if (note) note.textContent = "opens the Superspace Group Finder with this subgroup's operators";
+}
 
 syncLabel();
 elRun.disabled = true;

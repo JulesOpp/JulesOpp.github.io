@@ -66,8 +66,8 @@ function generatorsOf(rec: GroupRecord, ops: SOp[]): string[] {
   return gens;
 }
 
-export function runSubgroups(raw: string, f: SubFilter): { parent: string; parentSgNumber: number; rows: SubRow[]; warnings: string[] } {
-  const rec = parseByuPage(raw);
+export function runSubgroups(raw: string | GroupRecord, f: SubFilter): { parent: string; parentSgNumber: number; rows: SubRow[]; warnings: string[] } {
+  const rec = typeof raw === "string" ? parseByuPage(raw) : raw;
   if (rec.d !== 1) throw new SubgroupError("only d = 1 is supported for now");
   if (f.kIndex !== 1) throw new SubgroupError("only k-index 1 is supported for now");
 
