@@ -220,7 +220,7 @@ function report(bad: string[], total: number): string {
 const SWEEP_TIMEOUT = 1_800_000;
 
 describe.skipIf(!have)("standardise vs the BYU (3+1)D tables (local-only)", () => {
-  it("(a) every record, after 3 seeded random setting changes, standardises to its own symbol", () => {
+  it("(a) every record, after 3 seeded random setting changes, standardises to its own symbol", async () => {
     const recs = allD1();
     expect(recs).toHaveLength(775);
     const rnd = rng(20261110);
@@ -236,13 +236,15 @@ describe.skipIf(!have)("standardise vs the BYU (3+1)D tables (local-only)", () =
         if (v.alt) viaAlt++;
         if (!v.ok) bad.push(`${sg}\t${r.label}\t${r.sym}\t(q ${q})\tgot ${v.got}`);
       }
+      // Let Vitest's worker RPC drain between parents during this long sweep.
+      await new Promise<void>((resolve) => setImmediate(resolve));
     }
     expect(viaAlt).toBe(102);
     console.log(`(a) ${n} cases, BYU name is an alternate (not the primary) in ${viaAlt}`);
     expect(bad, report(bad, n)).toEqual([]);
   }, SWEEP_TIMEOUT);
 
-  it("(b) every k-index-1 subgroup class of every record standardises to its BYU type", () => {
+  it("(b) every k-index-1 subgroup class of every record standardises to its BYU type", async () => {
     const recs = new Map(allD1().map((r) => [r.label, r]));
     const files = readdirSync(SUBS).filter((f) => f.endsWith(".json") && !f.startsWith("_"));
     expect(files).toHaveLength(775);
@@ -262,6 +264,8 @@ describe.skipIf(!have)("standardise vs the BYU (3+1)D tables (local-only)", () =
         const got = v.got;
         if (!v.ok) bad.push(`${cls.byu.split(".")[0]}\t${fx.label} ${fx.sym} [${cls.pg_ops}]\t${cls.byu_sym}\tgot ${got}`);
       }
+      // Let Vitest's worker RPC drain between parents during this long sweep.
+      await new Promise<void>((resolve) => setImmediate(resolve));
     }
     expect(n).toBe(8204);
     expect(viaAlt).toBe(67);
