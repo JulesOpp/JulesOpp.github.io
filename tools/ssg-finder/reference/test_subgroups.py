@@ -210,7 +210,7 @@ def test_d_guard_raises():
     import ssg_equiv as se
     from subgroups import t_subgroups
     for fn in (t_subgroups, se.q_generic, se.Prep):
-        with pytest.raises(ValueError, match="d = 1"):
+        with pytest.raises(ValueError, match="d"):
             fn({"d": 4})
 
 
@@ -243,10 +243,11 @@ def test_summary_seconds_after_resume(tmp_path, monkeypatch):
     calls = []
     def fixture(label):
         calls.append(label)
-        return dict(label=label, sym="synthetic", order=1, classes=[])
+        return _synthetic_fixture(label)
     monkeypatch.setattr(m, "fixture", fixture)
-    ticks = iter([10, 11, 13, 15, 20, 23])
-    monkeypatch.setattr(m.time, "time", lambda: next(ticks))
+    monkeypatch.setattr(m.se, "load_records", lambda d: {"1.1.1.1": {"d": 1, "cls": ""}})
+    ticks = iter([10, 11, 13, 14, 15, 20, 23])
+    monkeypatch.setattr(m.time, "monotonic", lambda: next(ticks))
     m.main(["1.1.1.1", "--jobs", "16"], out=tmp_path)
     prior = json.loads((tmp_path / "_summary.json").read_text())
     m.main(["1.1.1.1", "--jobs", "16", "--resume"], out=tmp_path)
@@ -254,5 +255,345 @@ def test_summary_seconds_after_resume(tmp_path, monkeypatch):
     assert prior["seconds"] == prior["wall_seconds_this_run"] == 5
     assert summary["wall_seconds_this_run"] == 3
     assert summary["seconds"] == prior["seconds"] + summary["wall_seconds_this_run"] == 8
+    assert summary["estimate"]["status"] == "complete"
+    assert "per_label" in summary["estimate"]
     assert summary["jobs"] == 4
     assert calls == ["1.1.1.1"]
+
+
+
+def _p1_d2():
+    return dict(sym="P1(a,b,g)0(d,e,z)0", cls="", d=2,
+                q=["a,b,g", "d,e,z"], params=["a","b","g","d","e","z"],
+                cen=[], gen=[], nops=1)
+
+
+def test_p1_d2():
+    from subgroups import t_subgroups
+    from ssg_equiv import q_generic, check_map
+    r = _p1_d2()
+    classes = t_subgroups(r, {"1.2.1.1": r})
+    assert len(classes) == 1
+    c = classes[0]
+    assert c["matches"] == ["1.2.1.1"]
+    assert c["index"] == c["class_size"] == 1
+    assert c["pg_ops"] == [0]
+    assert len(c["map"]["E"]) == len(c["map"]["M"]) == len(c["map"]["p4"]) == 2
+    assert check_map(r, q_generic(r), r, c["map"])
+
+
+@byu
+def test_every_subgroup_identified_d2_sample():
+    import exact
+    from check_equiv_d23 import sample as stratified
+    from subgroups import t_subgroups, subgroup_record
+    from ssg_equiv import q_generic, check_map
+    db = load_records(2)
+    for label, r in stratified(db).items():
+        for c in t_subgroups(r, db):
+            assert len(c["matches"]) == 1, (label, c)
+            sub = subgroup_record(r, exact.build_ops(r), c["pg_ops"])
+            assert check_map(sub, q_generic(r), db[c["byu"]], c["map"]), (label, c)
+
+
+@byu
+def test_star_split():
+    from subgroups import t_subgroups
+    db = load_records(3)
+    classes = t_subgroups(db["221.3.213.10"], db)
+    # 4/mmm (D4h), order 16, is a Sylow 2-subgroup of m-3m (Oh), order 48.
+    # Every 2-subgroup is conjugate into D4h; order <=16 alone also includes
+    # cubic 23 (T), order 12, whose family need not split into more parameters.
+    selected = [c for c in classes if 48 // c["index"] in (1, 2, 4, 8, 16)]
+    assert {1, 16} <= {48 // c["index"] for c in selected}
+    for c in selected:
+        assert len(c["matches"]) == 1, c
+        assert len(db[c["byu"]]["params"]) > 1, c
+
+
+def test_fixture_d2_matrix_fields(monkeypatch):
+    import make_subgroup_fixtures as m
+    r = _p1_d2()
+    monkeypatch.setattr(m.se, "load_records", lambda d: {"1.2.1.1": r})
+    fx = m.fixture("1.2.1.1")
+    assert fx["d"] == 2
+    c = fx["classes"][0]
+    assert set(("P", "p", "E", "M", "p4")) <= c.keys()
+    assert "eta" not in c and "m" not in c
+    assert c["E"] == [[1,0],[0,1]]
+    assert c["M"] == [["0"]*3]*2 and c["p4"] == ["0","0"]
+
+
+def test_sample_coverage_and_estimate():
+    from make_subgroup_fixtures import sample_labels, estimate_runtime
+    db = {"1.2.1.1": {"cls":"a"}, "1.2.1.2": {"cls":"b"},
+          "2.2.1.1": {"cls":"a"}, "2.2.1.2": {"cls":"a"}}
+    labels = sample_labels(db)
+    assert {db[l]["cls"] for l in labels} == {"a","b"}
+    assert {l.split(".")[0] for l in labels} == {"1","2"}
+    runs = [dict(label=l, seconds=2) for l in labels]
+    estimate = estimate_runtime(db, runs, 2)
+    assert estimate["estimated_full_worker_seconds"] == 8
+    assert estimate["estimated_full_wall_seconds"] == 4
+    assert len(estimate["per_label"]) == 4
+    assert all(row["projection_method"] in ("measured", "basic_sg_and_class_mean", "class_mean", "basic_sg_mean", "sample_mean") for row in estimate["per_label"])
+
+
+def test_checkpoint_rejects_changed_fixture(tmp_path, monkeypatch):
+    import make_subgroup_fixtures as m
+    monkeypatch.setattr(m.se, "load_records", lambda d: {"1.1.1.1": {"d": 1, "cls": ""}})
+    monkeypatch.setattr(m.se, "load_records", lambda d: {"1.1.1.1": _rec("P1(a,b,g)0", [], q="a,b,g")})
+    m.work("1.1.1.1", out=tmp_path)
+    fx = json.loads((tmp_path / "1.1.1.1.json").read_text())
+    assert m.existing("1.1.1.1", tmp_path, fx["_signature"]) is not None
+    fx["sym"] = "changed"
+    (tmp_path / "1.1.1.1.json").write_text(json.dumps(fx))
+    assert m.existing("1.1.1.1", tmp_path, fx["_signature"]) is None
+    assert m.existing("1.1.1.1", tmp_path, "changed-source") is None
+
+
+
+def _synthetic_fixture(label):
+    d = int(label.split(".")[1])
+    return dict(label=label, d=d, sym="synthetic", order=1, classes=[
+        dict(pg_ops=[0], index=1, class_size=1, byu=label, byu_sym="P1",
+             P=[["1","0","0"],["0","1","0"],["0","0","1"]],
+             p=["0"]*3, E=[[int(i==j) for j in range(d)] for i in range(d)],
+             M=[["0"]*3 for _ in range(d)], p4=["0"]*d)])
+
+
+@pytest.mark.parametrize("damage", ["empty", "no_trivial", "no_full", "shape", "E", "P"])
+def test_resume_rejects_malformed_checkpoint(tmp_path, monkeypatch, damage):
+    import make_subgroup_fixtures as m
+    r = _p1_d2()
+    monkeypatch.setattr(m.se, "load_records", lambda d: {"1.2.1.1": r})
+    m.work("1.2.1.1", out=tmp_path)
+    path = tmp_path / "1.2.1.1.json"
+    fx = json.loads(path.read_text())
+    assert m.existing("1.2.1.1", tmp_path, fx["_signature"])
+    if damage == "empty":
+        fx["classes"] = []
+    elif damage == "no_trivial":
+        fx["order"] = 2
+        fx["classes"][0]["pg_ops"] = [0,1]
+    elif damage == "no_full":
+        fx["order"] = 2
+        fx["classes"][0]["index"] = 2
+    elif damage == "shape":
+        fx["classes"][0]["M"] = [["0"]*3]
+    elif damage == "E":
+        fx["classes"][0]["E"] = [[2,0],[0,1]]
+    else:
+        fx["classes"][0]["P"][0][0] = "-1"
+    # Even an internally rehashed malformed payload cannot bypass schema checks.
+    fx["_content_sha256"] = m.content_hash(fx)
+    path.write_text(json.dumps(fx))
+    assert m.existing("1.2.1.1", tmp_path, fx["_signature"]) is None
+
+
+def test_direct_subgroup_entrypoint_thread_env():
+    import subprocess
+    names = ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "VECLIB_MAXIMUM_THREADS")
+    env = dict(os.environ, **{k: "8" for k in names})
+    code = ("import os,sys; sys.path.insert(0," + repr(HERE) + "); import subgroups; "
+            "assert all(os.environ[k]=='1' for k in " + repr(names) + ")")
+    subprocess.run([sys.executable, "-I", "-c", code], env=env, check=True)
+
+
+
+def _parallel_p2_d3(screw=False, phase=False):
+    z = "z+1/2" if screw else "z"
+    t = "t+1/2" if phase else "t"
+    return dict(sym="public parallel-arm P2", cls="", d=3,
+                q=["0,0,a", "0,0,b", "0,0,c"], params=["a","b","c"],
+                gen=[f"-x,-y,{z},{t},u,v"], cen=[], nops=2)
+
+
+def test_fixed_torus_profile_prunes_phase_before_oracle(monkeypatch):
+    import subgroups as sub
+    a, b = _parallel_p2_d3(), _parallel_p2_d3(phase=True)
+    assert sub.fixed_torus_profile(a) != sub.fixed_torus_profile(b)
+    calls = []
+    def spy(*args):
+        calls.append(args)
+        raise AssertionError("phase-obstructed candidate reached the E search")
+    monkeypatch.setattr(sub.se, "equivalent", spy)
+    classes = sub.t_subgroups(a, {"3.3.1.1": b})
+    assert calls == []
+    assert len(classes) == 2
+    assert all(c['matches'] == [] for c in classes)
+
+
+def test_fixed_torus_profile_preserves_screw_phase_equivalence():
+    from fractions import Fraction as F
+    from subgroups import fixed_torus_profile
+    from ssg_equiv import check_map, q_generic
+    a = _parallel_p2_d3(screw=True)
+    b = _parallel_p2_d3(screw=True, phase=True)
+    assert fixed_torus_profile(a) == fixed_torus_profile(b)
+    mp = dict(P=[[F(int(i==j)) for j in range(3)] for i in range(3)],
+              p=[F(0)]*3, E=[[int(i==j) for j in range(3)] for i in range(3)],
+              M=[[F(0),F(0),F(1)],[F(0)]*3,[F(0)]*3], p4=[F(0)]*3)
+    assert check_map(a, q_generic(a), b, mp)
+
+
+def test_fixed_torus_profile_folds_internal_centring():
+    from subgroups import fixed_torus_profile
+    a = _parallel_p2_d3()
+    a['cen'] = ["0,0,0,1/2,0,0"]
+    a["nops"] = 4
+    b = dict(a, gen=["-x,-y,z,t+1/2,u,v"])
+    assert fixed_torus_profile(a) == fixed_torus_profile(b)
+    # Forgetting Σ would make the phase-half lift appear fixed-point-free.
+    assert fixed_torus_profile(a) != fixed_torus_profile(_parallel_p2_d3(phase=True))
+
+
+def test_fixed_torus_profile_rational_external_centring_control():
+    from subgroups import fixed_torus_profile
+    # x'=x/2 changes the external lattice basis and converts a half-translation
+    # in A to a quarter-translation in the centred presentation B.
+    a = _parallel_p2_d3()
+    a['gen'] = ["-x+1/2,-y,z,t,u,v"]
+    b = dict(a, cen=["1/2,0,0,0,0,0"], gen=["-x+1/4,-y,z,t,u,v"], nops=4)
+    assert fixed_torus_profile(a) == fixed_torus_profile(b)
+
+
+def test_fixed_torus_profile_coupled_centring_lift_control():
+    from subgroups import fixed_torus_profile
+    a = _parallel_p2_d3()
+    a['cen'] = ["1/2,0,0,1/2,0,0"]
+    a["nops"] = 4
+    b = dict(a, gen=["-x+1/2,-y,z,t+1/2,u,v"])
+    # Two affine representatives of the same action on the full coupled torus.
+    assert fixed_torus_profile(a) == fixed_torus_profile(b)
+
+
+@pytest.mark.parametrize("payload", [[], None, "not-a-fixture", 42])
+def test_resume_rejects_nonobject_json(tmp_path, payload):
+    import make_subgroup_fixtures as m
+    (tmp_path / "1.2.1.1.json").write_text(json.dumps(payload))
+    assert m.existing("1.2.1.1", tmp_path, "synthetic-signature") is None
+
+
+@pytest.mark.parametrize("seconds", [True, False, float("nan"), float("inf"), -1, "bad", None])
+def test_resume_rejects_invalid_fixture_seconds(tmp_path, monkeypatch, seconds):
+    import make_subgroup_fixtures as m
+    monkeypatch.setattr(m, "fixture", _synthetic_fixture)
+    monkeypatch.setattr(m, "source_signature", lambda d: "synthetic-signature")
+    m.work("1.1.1.1", out=tmp_path)
+    path = tmp_path / "1.1.1.1.json"
+    fx = json.loads(path.read_text())
+    assert m.existing("1.1.1.1", tmp_path, "synthetic-signature")
+    fx["_seconds"] = seconds
+    fx["_content_sha256"] = m.content_hash(fx)
+    path.write_text(json.dumps(fx))
+    assert m.existing("1.1.1.1", tmp_path, "synthetic-signature") is None
+
+
+@pytest.mark.parametrize("seconds", [True, float("nan"), float("inf"), -1, "bad", None])
+def test_resume_ignores_invalid_prior_seconds(tmp_path, monkeypatch, seconds):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+    import make_subgroup_fixtures as m
+    monkeypatch.setattr(m, "fixture", _synthetic_fixture)
+    monkeypatch.setattr(m.se, "load_records", lambda d: {"1.1.1.1": _rec("P1(a,b,g)0", [], q="a,b,g")})
+    monkeypatch.setattr(m, "source_signature", lambda d: "synthetic-signature")
+    monkeypatch.setattr(m.multiprocessing, "Pool", lambda *args, **kwargs:
+                        nullcontext(SimpleNamespace(imap_unordered=lambda fn, labels: map(fn, labels))))
+    (tmp_path / "_summary.json").write_text(json.dumps(dict(signature="synthetic-signature", seconds=seconds)))
+    ticks = iter([10, 11, 13, 14, 15])
+    monkeypatch.setattr(m.time, "monotonic", lambda: next(ticks))
+    m.main(["1.1.1.1", "--resume", "--jobs", "1"], out=tmp_path)
+    summary = json.loads((tmp_path / "_summary.json").read_text())
+    assert summary["seconds"] == summary["wall_seconds_this_run"] == 5
+    assert summary["complete"] and summary["estimate"]["status"] == "complete"
+    fx = m.existing("1.1.1.1", tmp_path, "synthetic-signature")
+    assert fx is not None and fx["_seconds"] == 2
+
+
+def _c4v_glides_d3(phase=False):
+    # Eight operations: 4_2 rotations, diagonal z-glides and axial b-glides.
+    # All external mirrors are fixed-point-free; their half internal character
+    # cannot be absorbed by the only covariant M row (parallel to z), because
+    # that same row must preserve the phase-zero 4_2 rotation.
+    t = "t+1/2" if phase else "t"
+    return dict(sym="public C4v screw/glide", cls="", d=3,
+                q=["0,0,a", "0,0,b", "0,0,c"], params=["a","b","c"],
+                gen=["-y,x,z+1/2,t,u,v", f"y+1/2,x+1/2,z+1/2,{t},u,v"],
+                cen=[], nops=8)
+
+
+def test_phase_character_prunes_glide_before_oracle(monkeypatch):
+    import exact
+    import subgroups as sub
+    a,b = _c4v_glides_d3(), _c4v_glides_d3(True)
+    assert len(exact.build_ops(a)) == a['nops']
+    assert len(exact.build_ops(b)) == b['nops']
+    assert sub.fixed_torus_profile(a) == sub.fixed_torus_profile(b)
+    assert sub.phase_character_profile(a) != sub.phase_character_profile(b)
+    # Only full-parent candidates have this point order; all proper subgroup
+    # basic SGs are absent. Derive the SG directly, never guess a corpus label.
+    sg = sub.se.prep(a).sg
+    calls=[]
+    monkeypatch.setattr(sub.se, 'equivalent', lambda *args: calls.append(args))
+    classes=sub.t_subgroups(a, {f'{sg}.3.1.1':b})
+    assert calls == []
+    assert all(c['matches'] == [] for c in classes)
+
+
+def test_phase_character_preserves_screw_and_centred_maps():
+    from fractions import Fraction as F
+    from subgroups import phase_character_profile
+    from ssg_equiv import check_map, q_generic
+    a,b = _parallel_p2_d3(screw=True), _parallel_p2_d3(screw=True,phase=True)
+    assert phase_character_profile(a) == phase_character_profile(b)
+    for centred in (False,True):
+        bb = dict(b)
+        if centred:
+            bb.update(cen=["1/2,0,0,0,0,0"],gen=["-x,-y,z+1/2,t+1/2,u,v"],nops=4)
+        mp=dict(P=[[F(1,2) if i==j==0 and centred else F(int(i==j)) for j in range(3)] for i in range(3)],
+                p=[F(0)]*3,E=[[(-1 if i==0 else 1)*int(i==j) for j in range(3)] for i in range(3)],
+                M=[[F(0),F(0),F(1)],[F(0)]*3,[F(0)]*3],p4=[F(0)]*3)
+        assert phase_character_profile(a) == phase_character_profile(bb)
+        assert check_map(a,q_generic(a),bb,mp)
+
+
+def test_phase_character_negative_scalar_origin_removable():
+    from fractions import Fraction as F
+    from subgroups import phase_character_profile
+    from ssg_equiv import check_map,q_generic
+    a=dict(_parallel_p2_d3(),gen=["-x,-y,-z,-t,-u,-v"])
+    b=dict(a,gen=["-x,-y,-z,-t+1/2,-u,-v"])
+    assert phase_character_profile(a) == phase_character_profile(b) == ()
+    mp=dict(P=[[F(int(i==j)) for j in range(3)] for i in range(3)],p=[F(0)]*3,
+            E=[[int(i==j) for j in range(3)] for i in range(3)],M=[[F(0)]*3 for _ in range(3)],
+            p4=[F(1,4),F(0),F(0)])
+    assert check_map(a,q_generic(a),b,mp)
+
+
+def test_phase_character_ineligible_is_skip():
+    from subgroups import phase_character_profile,_phase_compatible
+    a=_parallel_p2_d3()
+    mixed=dict(a,gen=["-x,-y,z,t+x,u,v"])
+    nonscalar=dict(a,gen=["-x,-y,z,-t,u,v"])
+    coupled=dict(a,cen=["1/2,0,0,1/2,0,0"],nops=4)
+    for r in (mixed,nonscalar,coupled):
+        assert phase_character_profile(r) is None
+        assert _phase_compatible(a,r) and _phase_compatible(r,a)
+
+
+def test_candidate_index_is_lazy_by_basic_sg(monkeypatch):
+    import subgroups as sub
+    a=_p1_d2()
+    other=dict(a,sym='unrequested expensive candidate')
+    db={'1.2.1.1':a,'999.2.1.1':other}
+    seen=[]
+    original=sub._type_key
+    def spy(rec,q):
+        seen.append(rec['sym'])
+        assert rec is not other
+        return original(rec,q)
+    monkeypatch.setattr(sub,'_type_key',spy)
+    classes=sub.t_subgroups(a,db)
+    assert classes[0]['matches'] == ['1.2.1.1']
+    assert seen

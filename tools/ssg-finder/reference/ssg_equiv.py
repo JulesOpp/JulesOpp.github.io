@@ -613,7 +613,7 @@ def _embedded_offset_compatible(A,B,P,Pi):
     return _rational_generator_lattice(tr(N)+projected,len(N)) == target
 
 
-def equivalent(rec_a,Q_a,rec_b):
+def equivalent(rec_a,Q_a,rec_b,*,e_candidates=None):
     """Map {P,p,E,M,p4} from A at exact Q_a to B, or None (bounded search)."""
     if rec_a['d'] != rec_b['d']: return None
     Q=mat(Q_a)
@@ -627,12 +627,13 @@ def equivalent(rec_a,Q_a,rec_b):
     # Exact self-map avoids constructing the normaliser for corpus validation.
     if rec_key(rec_a) == rec_key(rec_b):
         return dict(P=mat(im.eye(3)),p=[Fr(0)]*3,E=im.eye(A.d),M=[[Fr(0)]*3 for _ in range(A.d)],p4=[Fr(0)]*A.d)
+    candidate_stream = _e_candidates if e_candidates is None else e_candidates
     for N in normaliser_candidates(B.Kstd,B.Lstd):
         P=mm(mm(B.Ti,mat(N.tolist())),A.T)
         if im.det(P) <= 0 or im.det(P)*abs(A.detLam) != abs(B.detLam): continue
         Pi=im.inv_rat(P)
         if not _embedded_offset_compatible(A,B,P,Pi): continue
-        for E in _e_candidates(A,B,P,Pi):
+        for E in candidate_stream(A,B,P,Pi):
             sm=_solve_m(A,B,P,Q,E)
             if sm is None: continue
             sh=_solve_shift(A,B,P,Pi,*sm,E)

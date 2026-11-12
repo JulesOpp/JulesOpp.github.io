@@ -90,7 +90,7 @@ describe("standardise (public)", () => {
 
 const LOCAL = join(__dirname, "..", "local");
 const DATA = join(LOCAL, "data");
-const SUBS = join(LOCAL, "fixtures", "subgroups");
+const SUBS = join(LOCAL, "fixtures", "subgroups", "d1");
 const have = existsSync(DATA) && existsSync(SUBS);
 
 function allD1(): (GroupRecord & { label: string })[] {

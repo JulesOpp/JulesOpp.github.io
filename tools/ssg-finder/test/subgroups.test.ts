@@ -88,7 +88,7 @@ describe("tSubgroups (hand-written P-3c1(0,0,g)000)", () => {
 });
 
 const LOCAL = join(__dirname, "..", "local");
-const FIX = join(LOCAL, "fixtures", "subgroups");
+const FIX = join(LOCAL, "fixtures", "subgroups", "d1");
 const DATA = join(LOCAL, "data");
 const have = existsSync(FIX) && existsSync(DATA);
 
