@@ -1,7 +1,7 @@
-// k-index-1 (translationengleiche) subgroups of a (3+1)D superspace group.
+// k-index-1 (translationengleiche) subgroups of a (3+d)D superspace group (d ≤ 3).
 //
 // For incommensurate q the point group K_s of G is isomorphic to the basic point group K
-// ((R, eps) -> R is injective), and a subgroup H with the same superspace lattice is the full
+// ((R, E) -> R is injective), and a subgroup H with the same superspace lattice is the full
 // preimage of a subgroup P of K. Classes up to conjugacy in G are K-conjugacy classes of
 // subgroups of K. Mirrors reference/subgroups.py (without the BYU identification).
 
@@ -9,7 +9,7 @@ import { GroupRecord, SOp, buildOps, splitOp } from "./ssg";
 
 export interface PointOp {
   R: number[][];
-  eps: number; // +1 or -1
+  E: number[][]; // d×d internal action
 }
 
 export interface SubgroupClass {
@@ -26,9 +26,9 @@ function mul3(a: number[][], b: number[][]): number[][] {
   return a.map((row) => [0, 1, 2].map((j) => row.reduce((s, x, k) => s + x * b[k][j], 0)));
 }
 
-/** Point operations of a (3+1)D op list, one per distinct rotation part, in order of first appearance. */
+/** Point operations of a (3+d)D op list, one per distinct rotation part, in order of first appearance. */
 export function pointGroup(ops: SOp[], d: number): PointOp[] {
-  if (d !== 1) throw new Error("only d = 1 is supported for now");
+  if (d > 3) throw new Error("d > 3 is not supported");
   const seen = new Set<string>();
   const out: PointOp[] = [];
   for (const op of ops) {
@@ -36,15 +36,15 @@ export function pointGroup(ops: SOp[], d: number): PointOp[] {
     const k = rkey(R);
     if (seen.has(k)) continue;
     seen.add(k);
-    out.push({ R, eps: E[0][0] });
+    out.push({ R, E });
   }
   return out;
 }
 
 export function tSubgroups(rec: GroupRecord): SubgroupClass[] {
-  if (rec.d !== 1) throw new Error("only d = 1 is supported for now");
+  if (rec.d > 3) throw new Error("d > 3 is not supported");
   const ops = buildOps(rec);
-  const K = pointGroup(ops, 1);
+  const K = pointGroup(ops, rec.d);
   const n = K.length;
   const pos = new Map(K.map((p, i) => [rkey(p.R), i]));
   const table = K.map((a) => K.map((b) => pos.get(rkey(mul3(a.R, b.R)))!));
@@ -116,7 +116,7 @@ export function tSubgroups(rec: GroupRecord): SubgroupClass[] {
     const maximal = rep.length < n && !all.some((Q) => Q.length > rep.length && Q.length < n && isSub(rep, Q));
     return { rep, cls: {
       pointOps: rep.map((i) => K[i]),
-      ops: ops.filter((op) => inP.has(rkey(splitOp(op, 1).R))),
+      ops: ops.filter((op) => inP.has(rkey(splitOp(op, rec.d).R))),
       index: n / rep.length,
       classSize: size,
       maximal,
