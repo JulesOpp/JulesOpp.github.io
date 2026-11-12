@@ -42,11 +42,11 @@ def fixture(label):
         j = dict(pg_ops=c["pg_ops"], index=c["index"], class_size=c["class_size"])
         if len(c["matches"]) == 1:
             mp = c["map"]
-            assert all(x.denominator == 1 for x in mp["m"]), (label, c["pg_ops"], mp["m"])
+            assert all(x.denominator == 1 for x in mp["M"][0]), (label, c["pg_ops"], mp["M"][0])
             j.update(byu=c["byu"], byu_sym=c["byu_sym"],
                      P=[[exact.fstr(x) for x in r] for r in mp["P"]],
-                     p=[exact.fstr(x) for x in mp["p"]], eta=mp["eta"],
-                     m=[int(x) for x in mp["m"]], p4=exact.fstr(mp["p4"]))
+                     p=[exact.fstr(x) for x in mp["p"]], eta=mp["E"][0][0],
+                     m=[int(x) for x in mp["M"][0]], p4=exact.fstr(mp["p4"][0]))
         else:                                  # not expected; kept so the run log shows it
             j.update(byu=None, matches=c["matches"], sg=c["sg"])
         classes.append(j)

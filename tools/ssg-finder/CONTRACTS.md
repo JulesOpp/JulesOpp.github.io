@@ -106,10 +106,101 @@ The k-index-1 (translationengleiche) subgroups of a (3+1)D group (d = 1 only), o
 ```
 
 * **Representative.** Among the conjugates in a class, the one whose `pg_ops` list is lexicographically smallest.
-* **Identification** (`reference/ssg_equiv.py`, `equivalent`). The subgroup, at the parent's generic q (the §3.1 values `3001/10007, 4723/10007, 7177/10007` for the parameters in order), is tested against every d = 1 record with the same basic space-group number. Exactly one must match; the type's q is then `q' = (eta q + m) P⁻¹`, a member of the BYU q family (not reduced modulo L*). The map is one valid choice, not a canonical one: `P`, `p`, `m` are not unique. `m` is an integer row; `p` is not reduced into [0,1).
-* **Equivalence.** `S = [[P, 0], [m, eta]]` maps Σ_A onto Σ_B, `S g S⁻¹` lies in B modulo Σ_B for every g in A, and q' lies in B's q family exactly. P is searched as `T_B⁻¹ N T_A`, where `T` is spglib's standardisation and N runs over integer matrices with entries in −2..2, det ±1, that normalise the standard point group and keep the standard centred lattice (one N per coset N·K). Then m and (p, p4) are solved from mixed real/integer congruences with the Smith normal form.
+* **Identification** (`reference/ssg_equiv.py`, `equivalent`). The subgroup, at the parent's generic Q (the §3.1 values `3001/10007, 4723/10007, 7177/10007` for the parameters in order), is tested against every d = 1 record with the same basic space-group number. Exactly one must match; the type's q is then `q' = (eta q + m) P⁻¹`, a member of the BYU q family (not reduced modulo L*). The map is one valid choice, not a canonical one: `P`, `p`, `m` are not unique. `m` is an integer row; `p` is not reduced into [0,1).
+* **Equivalence.** `S = [[P, 0], [m, eta]]` maps Σ_A onto Σ_B, `S g S⁻¹` lies in B modulo Σ_B for every g in A, and q' lies in B's q family exactly. P is searched as `T_B⁻¹ N T_A`, where `T` is spglib's standardisation and N runs over integer matrices with entries in −2..2, det +1, that normalise the standard point group and keep the standard centred lattice (one N per coset N·K). Then m and (p, p4) are solved from mixed real/integer congruences with the Smith normal form.
 * `_summary.json` in the same folder is a run log (per-group class counts, timings, any unidentified classes), not a fixture. `seconds` is cumulative wall time across resumed runs; `wall_seconds_this_run` is wall time for this invocation. `jobs` records the effective capped worker count.
 * Tests: `reference/test_subgroups.py` runs a representative subset (every Bravais class, plus 14, 15, 62, 165, 194); `SSG_FULL=1` runs the sweep over all 775 (3+1)D records.
 * Generation: `make_subgroup_fixtures.py [--resume]` uses at most 4 worker processes (`--jobs` or `SSG_JOBS` selects 1–4, clamped to that range), each with BLAS/OMP limited to one thread; `--resume` keeps complete fixtures and adds this run’s wall time to the prior summary’s `seconds`. All 775 take roughly 4–5 minutes on 4 cores.
 
 * Oracle record loading: `ssg_equiv.load_records(d, data_dir=DATA)` caches records by dimension and data directory. `load_d1()` remains a compatibility alias for `load_records(1)`. Public hygiene tests use synthetic data and run without `local/`.
+
+### 5.1 Exact oracle matrix API (d = 1, 2, 3)
+
+`q_generic(rec)` returns a d×3 matrix of Fractions. Parameter i takes
+`(S[i % 3] + 1009*(i // 3))/10007`, S = (3001,4723,7177).
+`equivalent(rec_a, Q_a, rec_b)` returns `None` or a map with:
+
+* `P`: 3×3 Fractions; `p`: three Fractions.
+* `E`: d×d unimodular integers; `M`: d×3 Fractions; `p4`: d Fractions.
+
+The map is `x' = P x + p`, `t' = M x + E t + p4`, with
+`Q' = (E Q_a + M) P^-1` exactly in B's affine parameter family. It preserves
+external orientation: `det(P) > 0` and `det(P)*covol(Σ_A) = covol(Σ_B)`;
+`det(E)` may be either sign. This follows van Smaalen, Campbell and Stokes
+(2013), §2.1 equation (7) and §6
+(<https://journals.iucr.org/a/issues/2013/01/00/pc5018/index.html>).
+Thus enantiomorphic types remain distinct. Positive normaliser candidates are
+selected before point-group coset representatives are taken.
+
+For d = 1, `E=[[eta]]`, `M=[m]`, `p4=[p4]`. The existing d1 fixture writer
+currently serialises the legacy scalar `eta`, row `m`, scalar `p4` fields in
+§5; it adapts matrix oracle results explicitly. `check_map` accepts those legacy
+fixture maps while fixtures and subgroup generation are migrated separately.
+New oracle callers use only matrix fields.
+
+`invariant(rec,Q)` returns dimension, point-group order, symbolic module rank,
+and the sorted multiset `(order R, det R, tr R, tr E(R))`. Raw canonical `nops`
+is not a conjugacy invariant between primitive and centred settings; use
+`|K| = nops*covol(Σ)` instead. Corpus pair buckets additionally use the basic
+space-group number (known directly from the local catalogue label).
+
+`rank_Mstar(rec,Q)` uses independent *formal family coefficients*, stacking
+the constant and every parameter coefficient of each q row alongside the
+three ordinary reciprocal generators. A rational numeric Q always has
+Q-linear rank at most three; it cannot represent incommensurate rank 3+d.
+The helper verifies exact Q shape and affine-family membership; exact operator
+faithfulness and map validity are checked by the oracle/checker. It does not
+claim that the supplied rational evaluation is itself irrational or Q-independent.
+
+For each external candidate P, intertwining and symbolic-family constraints
+are solved exactly; their integer solution lattice is saturated and put in
+row HNF. E is searched with lattice coefficients in −2..2 and determinant ±1
+(identity is tried first when allowed). The bounded external normaliser and
+bounded E search can miss equivalences in arbitrary distant settings; a
+returned map is independently checked exactly. Exact determinant-polynomial
+content and affine-family torsion obstructions reduce negative searches.
+The torsion obstruction applies only to product lattices L3⊕Z^d and equal
+family dimensions, so a narrower subgroup family can still match a canonical
+family with more free parameters. M and all origin coordinates follow from
+Smith-normal-form mixed congruence solves.
+
+A further product-lattice obstruction keeps the finite abelian group of
+constant q-row offsets transverse to all free physical directions. In primitive
+external coordinates, let V span every parameter-coefficient row, N span its
+annihilator, L0=N Z^3, and L1=L0 plus the integer span of N Q0[i]^T. Rational
+HNF of exactly these generators (without adding an ambient unit lattice) and
+SNF of B1^-1 B0 give the nonunit invariant factors of L1/L0. Compare only when
+the physical row ranks agree and both lattices have no internal centring:
+family inclusion then identifies V under unimodular external coordinates;
+unimodular E preserves the projected-row subgroup and integral M contributes
+only L0. Unequal physical row ranks deliberately skip this obstruction for
+narrower subgroup families. It distinguishes a single order-two offset from
+two independent order-two offsets, which scalar family torsion cannot.
+
+For a fixed external P, a stronger embedded-lattice check runs before E search.
+On product lattices require U=L3B^-1 P L3A integral unimodular. In B's cached
+annihilator N, all source coefficient rows transformed by P^-1 L3B must project
+to zero. Compare the exact rational-HNF lattices generated by N Z^3 and the
+projected target constants against those generated by N Z^3 and source constants
+transformed by P^-1 L3B. Primitive M contributes only N Z^3 and unimodular E
+preserves the generated subgroup, so embedded lattice equality is necessary.
+Unlike the abstract quotient comparison, this per-P condition needs no equality
+of physical row ranks or parameter-family dimensions. It is skipped for
+internal/mixed centrings, and the projection condition is vacuous when N is empty.
+It distinguishes offset directions that are abstractly isomorphic but cannot
+be related by an allowed external normalizer, while accepting an external shear
+when that shear is actually available.
+
+A threefold acting on three chosen arms of a four-arm tetrahedral star can
+have integer sums in E: the omitted arm is minus the sum of the chosen arms.
+A permutation-matrix-only expectation is invalid in that basis.
+
+`count_d23.py` writes local `_counts.json`, including total and within-basic-SG
+pair counts. `check_equiv_d23.py --d 2 --jobs 4` validates all d2 pairs with
+source-and-corpus-hashed per-case JSONL resume checkpoints under local/.
+`--d 3` uses a stable sample covering every Bravais class and every basic SG;
+`--full` is explicit and requires a prior runtime estimate and user approval
+above four hours. The user has deferred all full d3 sweeps for Phase B.
+Default pytest pair tests use up to 100 evenly spaced pairs from stratified records; `SSG_FULL=d2` requests all
+d2 pairs, and `SSG_FULL=d3` requests all d3 records. Full sweeps should use the
+resumable harness in the background. All local corpus tests skip without local/.
