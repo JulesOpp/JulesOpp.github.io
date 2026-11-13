@@ -45,7 +45,7 @@ describe("standardise (public)", () => {
     if (isOk(r)) {
       expect(r.sgNumber).toBe(165);
       expect(r.symbol.full).toBe("P-3c1(0,0,g)000");
-      expect(r.qActual).toBe("0,0,g");
+      expect(r.qActual).toEqual(["0,0,g"]);
       expect(r.alternates).toEqual([]);
     }
   });
@@ -63,7 +63,7 @@ describe("standardise (public)", () => {
     for (const cls of tSubgroups(P3c1)) {
       const r = standardise(cls.ops, P3c1.q);
       if (!isOk(r)) throw new Error("not ok");
-      const S = transformOps(cls.ops, r.P.map((row) => row.map(Q.parse)), r.p.map(Q.parse), r.eta, r.m.map((x) => Q.of(x)), Q.parse(r.p4));
+      const S = transformOps(cls.ops, r.P.map((row) => row.map(Q.parse)), r.p.map(Q.parse), r.E, r.M.map(row => row.map(Q.parse)), r.p4.map(Q.parse));
       expect(S).not.toBeNull();
       // independent of standardise: symbol of the transformed operations in the reported q family
       const sym = ssgSymbolInAxes(S!, [r.symbol.q.replace(/[()]/g, "")], crystalSystemOf(r.sgNumber));
@@ -72,18 +72,13 @@ describe("standardise (public)", () => {
       const q = P3c1.q[0].split(",").map((x) => parseLinear(x, ["g"]));
       const Pm = r.P.map((row) => row.map(Q.parse));
       const Pi = matInv(Pm);
-      const qNew = [0, 1, 2].map((j) => [0, 1, 2].reduce((s, i) => s.add(q[i].coef[0].mulInt(r.eta).mul(Pi[i][j])), Q.ZERO));
-      const mm = r.m.map((x) => Q.of(x));
+      const qNew = [0, 1, 2].map((j) => [0, 1, 2].reduce((s, i) => s.add(q[i].coef[0].mulInt(r.E[0][0]).mul(Pi[i][j])), Q.ZERO));
+      const mm = r.M[0].map(Q.parse);
       const mp = [0, 1, 2].map((j) => [0, 1, 2].reduce((s, i) => s.add(mm[i].mul(Pi[i][j])), Q.ZERO));
-      expect(formatQ(qNew.map((c, i) => ({ coef: [c], c: mp[i] })), ["g"])).toBe(r.qActual);
+      expect(formatQ(qNew.map((c, i) => ({ coef: [c], c: mp[i] })), ["g"])).toBe(r.qActual[0]);
     }
   });
-  it("refuses d != 1", () => {
-    const ops = buildOps({ ...P3c1, d: 2, gen: ["y,-x+y,-z,-t,-u"] });
-    const r = standardise(ops, ["0,0,g", "0,0,g"]);
-    expect(r).toMatchObject({ ok: false });
-    expect((r as { reason: string }).reason).toMatch(/d = 1/);
-  });
+
 });
 
 // ------------------------------------------------------------------ local-only (BYU-derived oracle)
@@ -161,7 +156,7 @@ function randomSetting(r: GroupRecord, sg: number, rnd: () => number): { ops: SO
   const p = [frac(), frac(), frac()];
   const eta: 1 | -1 = rnd() < 0.5 ? 1 : -1;
   const m = [0, 1, 2].map(() => Q.of(Math.floor(rnd() * 3) - 1));
-  const ops = transformOps(buildOps(r), P, p, eta, m, frac());
+  const ops = transformOps(buildOps(r), P, p, [[eta]], [m], [frac()]);
   if (!ops) throw new Error(`setting change failed for ${r.sym}`);
   // q' = (eta q + m) P^-1
   const names = paramsOf(r.q);

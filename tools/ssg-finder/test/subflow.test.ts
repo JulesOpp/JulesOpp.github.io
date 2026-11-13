@@ -16,24 +16,29 @@ const P3C1 =
 
 describe("affineText", () => {
   it("writes x_std = P x + p and t' = m·x + η t + p4 as coordinates", () => {
-    const t = { P: [["0", "-1", "0"], ["1", "-1", "0"], ["0", "0", "-1"]], p: ["0", "0", "-1/4"], eta: -1 as const, m: [0, 0, 0], p4: "0" };
+    const t = { P: [["0", "-1", "0"], ["1", "-1", "0"], ["0", "0", "-1"]], p: ["0", "0", "-1/4"], E: [[-1]], M: [["0", "0", "0"]], p4: ["0"] };
     expect(affineText(t)).toBe("(-y, x-y, -z-1/4; -t)");
-    const u = { P: [["1/2", "0", "0"], ["0", "0", "1"], ["-1/2", "1", "0"]], p: ["1/2", "0", "0"], eta: 1 as const, m: [1, 0, -2], p4: "1/4" };
+    const u = { P: [["1/2", "0", "0"], ["0", "0", "1"], ["-1/2", "1", "0"]], p: ["1/2", "0", "0"], E: [[1]], M: [["1", "0", "-2"]], p4: ["1/4"] };
     expect(affineText(u)).toBe("(1/2x+1/2, z, -1/2x+y; x-2z+t+1/4)");
   });
 });
 
+it("writes every internal coordinate of a higher-dimensional affine map",()=>{
+ const t={P:[["1","0","0"],["0","1","0"],["0","0","1"]],p:["0","0","0"],E:[[0,1],[1,0]],M:[["0","0","1"],["-1","0","0"]],p4:["1/2","0"]};
+ expect(affineText(t)).toBe("(x, y, z; z+u+1/2, -x+t)");
+});
+
 describe("displayMap", () => {
   it("reduces positive and negative origin shifts modulo the integer lattice without changing the map", () => {
-    const t = { P: [["1", "0", "0"], ["0", "1", "0"], ["0", "0", "1"]], p: ["0", "0", "1"], eta: 1 as const, m: [0, 0, 0], p4: "0" };
+    const t = { P: [["1", "0", "0"], ["0", "1", "0"], ["0", "0", "1"]], p: ["0", "0", "1"], E: [[1]], M: [["0", "0", "0"]], p4: ["0"] };
     const before = structuredClone(t);
     expect(displayMap(t).p).toEqual(["0", "0", "0"]);
     expect(affineText(displayMap(t))).toBe("(x, y, z; t)");
     expect(t).toEqual(before);
-    const shifted = { ...t, p: ["-1/4", "7/3", "-2"], p4: "-5/4" };
+    const shifted = { ...t, p: ["-1/4", "7/3", "-2"], p4: ["-5/4"] };
     const saved = structuredClone(shifted);
-    expect(displayMap(shifted)).toEqual({ ...shifted, p: ["3/4", "1/3", "0"], p4: "3/4" });
-    expect(displayMap({ ...t, p4: "9/4" }).p4).toBe("1/4");
+    expect(displayMap(shifted)).toEqual({ ...shifted, p: ["3/4", "1/3", "0"], p4: ["3/4"] });
+    expect(displayMap({ ...t, p4: ["9/4"] }).p4).toEqual(["1/4"]);
     expect(shifted).toEqual(saved);
   });
 });

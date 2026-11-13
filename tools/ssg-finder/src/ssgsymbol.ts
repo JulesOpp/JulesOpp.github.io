@@ -473,6 +473,11 @@ function globalShifts(
       options.push([...seen.values()]);
     }
   }
+  if(_testOnly.candidates===null) {
+    const chosen=bestIntrinsicAssignment(options);
+    if(!chosen)return null;
+    return Array.from({length:d},(_,i)=>chosen.map(v=>signedLetter(v[i])!).join(''));
+  }
   // order of the flat sequence used by the "nicest" comparison
   const flat = (choice: Q[][]): Q[] => Array.from({ length: d }, (_, i) => choice.map(v => v[i])).flat();
   let best: Q[][] | null = null, bestFlat: Q[] | null = null;
@@ -559,6 +564,33 @@ export function compareIntrinsicAssignments(a0: Q[], b0: Q[]): number {
   for (let i = 0; i < a.length; i++) if ((c = cmpInt(a[i].d, b[i].d))) return c;
   for (let i = 0; i < a.length; i++) if ((c = cmpInt(a[i].n, b[i].n))) return c;
   return 0;
+}
+
+/** Exact minimum of the generator-option Cartesian product under
+ * compareIntrinsicAssignments (flattened internal coordinate first).
+ * Negative and zero counts are additive, so minimize them independently per
+ * generator. The optimal maximum denominator is the largest local minimum.
+ * Below that threshold, lexicographic denominator/numerator minima separate
+ * again because each generator occupies a disjoint ordered set of positions. */
+export function bestIntrinsicAssignment(options:Q[][][]):Q[][]|null {
+  if(options.some(v=>!v.length))return null;
+  const negatives=(v:Q[])=>v.filter(x=>x.sign()<0).length;
+  const zeros=(v:Q[])=>v.filter(x=>x.isZero()).length;
+  const maxden=(v:Q[])=>v.reduce((m,x)=>x.d>m?x.d:m,1n);
+  const filtered=options.map(choices=>{
+    let vs=choices.map(v=>v.map(signed));
+    const n=Math.min(...vs.map(negatives));vs=vs.filter(v=>negatives(v)===n);
+    const z=Math.max(...vs.map(zeros));return vs.filter(v=>zeros(v)===z);
+  });
+  const threshold=filtered.reduce((m,vs)=>{
+    const local=vs.reduce((a,v)=>maxden(v)<a?maxden(v):a,maxden(vs[0]));return local>m?local:m;
+  },1n);
+  const cmp=(a:Q[],b:Q[])=>{
+    for(let i=0;i<a.length;i++){const c=cmpInt(a[i].d,b[i].d);if(c)return c;}
+    for(let i=0;i<a.length;i++){const c=cmpInt(a[i].n,b[i].n);if(c)return c;}
+    return 0;
+  };
+  return filtered.map(vs=>vs.filter(v=>maxden(v)<=threshold).sort(cmp)[0]);
 }
 
 /**

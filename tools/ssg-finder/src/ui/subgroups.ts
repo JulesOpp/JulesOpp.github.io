@@ -216,7 +216,7 @@ function render(): void {
       `<td>${r.type ? sym(r.pointGroup) : "?"}</td>` +
       `<td>${r.type ? `${sym(r.sgSymbol)} <span class="muted">(${r.sgNumber})</span>` : "?"}</td>` +
       `<td class="ty">${typeCell(r)}</td>` +
-      `<td class="mono">${r.type ? "(" + esc(r.type.qActual) + ")" : "?"}</td>` +
+      `<td class="mono">${r.type ? "(" + esc(r.type.qActual.join(")(")) + ")" : "?"}</td>` +
       `<td>${r.classSize}</td><td>${r.maximal ? "yes" : "no"}</td>` +
       `<td class="mono">${r.type ? esc(affineText(displayMap(r.type))) : "?"}</td></tr>`;
     h += `<tr id="${did}" class="ssgs-det"${open ? "" : " hidden"}><td colspan="10"><div class="ssgs-detbox">` +

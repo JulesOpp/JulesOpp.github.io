@@ -44,23 +44,23 @@
 // The letter-position comparison order is empirical, fixed by the 775-record d = 1
 // sweep. It is a naming convention fitted to those data, not a derived universal order.
 
-import { gcd, toSafeInt, matInv, matMul, Q, type QMat, type QVec } from "./rational";
+import { gcd, toSafeInt, matInv, Q, type QMat, type QVec } from "./rational";
 import { identify, numToQ, type Op3 } from "./identify";
 import { paramsOf, parseLinear, type SOp } from "./ssg";
 import { crystalSystemOf, type CrystalSystem } from "./symbol";
 import { ssgSymbolInAxes, type SsgSymbol } from "./ssgsymbol";
-import { hnf, snf, type IMat } from "./intmat";
+import { hnf, snf, imatDet, type IMat } from "./intmat";
 
 export interface Standardised {
   ok: true;
   sgNumber: number;
   symbol: SsgSymbol; // type symbol, q written as the family (a, b, g letters)
-  qActual: string; // the group's own q in that setting, e.g. "0,0,g" or "-g,g,0"
+  qActual: string[]; // the group's own q in that setting, e.g. "0,0,g" or "-g,g,0"
   P: string[][];
   p: string[]; // 3D: x_std = P x + p
-  eta: 1 | -1;
-  m: number[];
-  p4: string;
+  E: number[][];
+  M: string[][];
+  p4: string[];
   /** Full symbols of the same type in the other tied settings (sorted, without the primary). */
   alternates: string[];
 }
@@ -126,7 +126,9 @@ const B_SETTINGS: Record<CrystalSystem, number[][][]> = {
 // ------------------------------------------------------------------ small exact helpers
 
 const qmat = (A: number[][]): QMat => A.map((r) => r.map((x) => qi(x)));
-const mv = (A: QMat, v: QVec): QVec => A.map((r) => r.reduce((s, a, j) => s.add(a.mul(v[j])), Z));
+// Exact sparse products avoid allocating rationals for zero summands.
+const matMul = (A:QMat,B:QMat):QMat => A.map(row=>Array.from({length:B[0]?.length??0},(_,j)=>row.reduce((s,a,k)=>a.isZero()||B[k][j].isZero()?s:s.add(a.mul(B[k][j])),Z)));
+const mv = (A: QMat, v: QVec): QVec => A.map((r) => r.reduce((s, a, j) => a.isZero()||v[j].isZero()?s:s.add(a.mul(v[j])), Z));
 const vadd = (a: QVec, b: QVec): QVec => a.map((x, i) => x.add(b[i]));
 const vsub = (a: QVec, b: QVec): QVec => a.map((x, i) => x.sub(b[i]));
 const vkey = (v: QVec) => v.map(String).join(",");
@@ -177,50 +179,52 @@ const isIdW = (W: number[][]) => W.every((r, i) => r.every((x, j) => x === (i ==
  * setting x' = Px + p, x4' = m.x + eta x4 + p4. Null if the map does not keep the superspace
  * lattice integral (a new basis vector that is not a lattice vector, or a non-integral W').
  */
-export function transformOps(ops: SOp[], P: QMat, p: QVec, eta: 1 | -1, m: QVec, p4: Q): SOp[] | null {
-  const S: QMat = [...P.map((r) => [...r, Z]), [...m, qi(eta)]];
-  const Pi = matInv(P);
-  const mPi = [0, 1, 2].map((j) => m.reduce((s, x, i) => s.add(x.mul(Pi[i][j])), Z));
-  const Si: QMat = [...Pi.map((r) => [...r, Z]), [...mPi.map((x) => x.mulInt(-eta)), qi(eta)]];
-  const s = [...p, p4];
-  // lattice: the old translations (Z^4 + centrings) in new coordinates must contain Z^4
-  const oldCen = ops.filter((o) => isIdW(o.W)).map((o) => o.w);
-  for (let j = 0; j < 4; j++) {
-    const v = Si.map((r) => r[j]);
-    if (!oldCen.some((c) => isIntV(vsub(v, c)))) return null;
+export function transformOps(ops: SOp[], P: QMat, p: QVec, E: number[][], M: QMat, p4: QVec): SOp[] | null {
+  const d = E.length, n = 3 + d;
+  const S = [...P.map(r => [...r, ...Array(d).fill(Z)]), ...M.map((r,i) => [...r, ...E[i].map(qi)])];
+  const Si = matInv(S), shift = [...p, ...p4];
+  const oldCen = ops.filter(o => isIdW(o.W)).map(o => o.w);
+  for (let j=0;j<n;j++) if (!oldCen.some(c => isIntV(vsub(Si.map(r=>r[j]),c)))) return null;
+  const gens = [...Array.from({length:n},(_,j)=>S.map(r=>r[j])), ...oldCen.map(c=>mv(S,c))].map(v=>v.map(x=>x.mod1()));
+  const zero = Array(n).fill(Z), cen = new Map([[vkey(zero),zero]]);
+  for(let frontier=[zero];frontier.length;) {
+    const next: QVec[]=[];
+    for(const a of frontier) for(const g of gens) {const b=vadd(a,g).map(x=>x.mod1()), k=vkey(b); if(!cen.has(k)){cen.set(k,b);next.push(b);}}
+    frontier=next; if(cen.size>1000)return null;
   }
-  // new centrings: closure of the images of the old lattice generators, mod 1
-  const gens = [...[0, 1, 2, 3].map((j) => S.map((r) => r[j])), ...oldCen.map((c) => mv(S, c))].map((v) => v.map((x) => x.mod1()));
-  const cen = new Map<string, QVec>([[vkey([Z, Z, Z, Z]), [Z, Z, Z, Z]]]);
-  let frontier = [...cen.values()];
-  while (frontier.length) {
-    const next: QVec[] = [];
-    for (const a of frontier)
-      for (const g of gens) {
-        const b = vadd(a, g).map((x) => x.mod1());
-        const k = vkey(b);
-        if (!cen.has(k)) {
-          cen.set(k, b);
-          next.push(b);
-        }
-      }
-    frontier = next;
-    if (cen.size > 1000) return null;
+  const out = new Map<string,SOp>();
+  for(const o of ops) {
+    const Wq=matMul(matMul(S,qmat(o.W)),Si); if(!Wq.every(isIntV))return null;
+    const W=Wq.map(r=>r.map(x=>toSafeInt(x,'operator matrix entry'))), w0=vsub(vadd(mv(S,o.w),shift),mv(Wq,shift));
+    for(const c of cen.values()) {const op={W,w:vadd(w0,c).map(x=>x.mod1())};out.set(opKey(op),op);}
   }
-  const out = new Map<string, SOp>();
-  for (const o of ops) {
-    const Wq = matMul(matMul(S, qmat(o.W)), Si);
-    if (!Wq.every((r) => isIntV(r))) return null;
-    const W = Wq.map((r) => r.map((x) => toSafeInt(x, "operator matrix entry")));
-    const w0 = vsub(vadd(mv(S, o.w), s), mv(Wq, s));
-    for (const c of cen.values()) {
-      const op = { W, w: vadd(w0, c).map((x) => x.mod1()) };
-      out.set(opKey(op), op);
-    }
-  }
-  const all = [...out.values()];
-  const id = all.find((o) => isIdW(o.W) && o.w.every((x) => x.isZero()))!;
-  return [id, ...all.filter((o) => o !== id).sort((a, b) => (opKey(a) < opKey(b) ? -1 : 1))];
+  const all=[...out.values()],id=all.find(o=>isIdW(o.W)&&o.w.every(x=>x.isZero()))!;
+  return [id,...all.filter(o=>o!==id).sort((a,b)=>opKey(a)<opKey(b)?-1:opKey(a)>opKey(b)?1:0)];
+}
+
+/** Factor a second, integral internal change after a physical conjugation.
+ * y=P x+p, s=U t; s'=B s+mp y-mp p, so the composed internal
+ * origin is exactly zero. This is an automorphism of Z^(3+d): no new lattice
+ * closure is needed. Integer matrix products use BigInt throughout. */
+function internalTransformer(ops:SOp[],p:QVec):(B:number[][],mp:QMat)=>SOp[] {
+  const d=ops[0].W.length-3;
+  const mul=(A:IMat,B:IMat):IMat=>A.map(row=>B[0].map((_,j)=>row.reduce((s,x,k)=>s+x*B[k][j],0n)));
+  const data=ops.map(o=>({o,R:o.W.slice(0,3).map(r=>r.slice(0,3).map(BigInt)),F:o.W.slice(3).map(r=>r.slice(0,3).map(BigInt)),D:o.W.slice(3).map(r=>r.slice(3).map(BigInt))}));
+  const inverses=new Map<string,IMat>();
+  return (basis,mp)=>{
+    const B=basis.map(r=>r.map(BigInt)),key=mkey(basis);
+    let Bi=inverses.get(key);if(!Bi){Bi=matInv(qmat(basis)).map(r=>r.map(x=>BigInt(toSafeInt(x,'inverse internal basis'))));inverses.set(key,Bi);}
+    const m=mp.map(r=>r.map(x=>BigInt(toSafeInt(x,'internal residue')))),shift=mv(mp,p).map(x=>x.neg());
+    const out=data.map(({o,R,F,D})=>{
+      const Dn=mul(mul(B,D),Bi!),BF=mul(B,F),mR=mul(m,R),Dm=mul(Dn,m);
+      const Fn=BF.map((r,i)=>r.map((x,j)=>x+mR[i][j]-Dm[i][j]));
+      const W=[...o.W.slice(0,3).map(r=>[...r.slice(0,3),...Array(d).fill(0)]),...Fn.map((r,i)=>[...r,...Dn[i]].map(x=>toSafeInt(x,'operator matrix entry')))];
+      const wI=vsub(vadd(vadd(mv(qmat(basis),o.w.slice(3)),mv(mp,o.w.slice(0,3))),shift),mv(Dn.map(r=>r.map(qi)),shift));
+      return {W,w:[...o.w.slice(0,3),...wI.map(x=>x.mod1())]};
+    });
+    const id=out.find(o=>isIdW(o.W)&&o.w.every(x=>x.isZero()))!;
+    return [id,...out.filter(o=>o!==id).sort((a,b)=>opKey(a)<opKey(b)?-1:opKey(a)>opKey(b)?1:0)];
+  };
 }
 
 // ------------------------------------------------------------------ lattices
@@ -280,8 +284,8 @@ interface NormEl {
 const normCache = new Map<string, NormEl[]>();
 
 /** Elements (N, n) of the affine normaliser of g: N from SMALL, one per coset N.K; all n mod L. */
-function normaliser(g: Group3, onlyIdentity: boolean, T: QMat): NormEl[] {
-  const key = T.map((r) => r.map(String).join(",")).join(";") + "|" + (onlyIdentity ? "1|" : "") + g.reps.map((o) => mkey(o.R) + ":" + vkey(o.t)).sort().join(" ") + "|" + g.cents.map(vkey).sort().join(" ");
+function normaliser(g: Group3, onlyIdentity: boolean, T: QMat, anchor?:number[][]): NormEl[] {
+  const key = T.map((r) => r.map(String).join(",")).join(";") + "|" + (onlyIdentity ? "1|" : "") + g.reps.map((o) => mkey(o.R) + ":" + vkey(o.t)).sort().join(" ") + "|" + g.cents.map(vkey).sort().join(" ") + (anchor ? "|anchor:"+mkey(anchor) : "");
   const hit = normCache.get(key);
   if (hit) return hit;
   const Kset = new Map(g.reps.map((o) => [mkey(o.R), o]));
@@ -290,7 +294,8 @@ function normaliser(g: Group3, onlyIdentity: boolean, T: QMat): NormEl[] {
   const BpT = Bp[0].map((_, j) => Bp.map((r) => r[j])); // x = BpT y
   const BpTi = matInv(BpT);
   const out: NormEl[] = [];
-  const cands = onlyIdentity ? [[[1, 0, 0], [0, 1, 0], [0, 0, 1]]] : SMALL;
+  const bounded = onlyIdentity ? [[[1, 0, 0], [0, 1, 0], [0, 0, 1]]] : SMALL;
+  const cands = anchor ? bounded.map(N=>imul(N,anchor)) : bounded;
   // Each coset N.K is represented by its simplest member (identity first, then fewest off-diagonal
   // entries, then fewest minus signs); cosets keep the order in which SMALL first meets them.
   // Simplicity is judged on the map N.T that is actually applied to the given axes (T: given -> standard).
@@ -491,7 +496,7 @@ export function candidates(ops: SOp[], Qtext: string[]): { sgNumber: number; lis
         for (const form of forms) {
           const mp0 = matchForm(q0, form);
           if (!mp0) continue;
-          const base = transformOps(ops, P, p, eta, toM(mp0, P), Z);
+          const base = transformOps(ops, P, p, [[eta]], [toM(mp0, P)], [Z]);
           if (!base) continue;
           // The free components of q' may also take any integer shift: it changes the internal
           // translations by m'.t3, so try every residue mod the translation denominators.
@@ -501,7 +506,7 @@ export function candidates(ops: SOp[], Qtext: string[]): { sgNumber: number; lis
             const mp = mp0.map((x, j) => x.add(qi(k[j])));
             const m = toM(mp, P);
             if (!isIntV(m)) continue;
-            const newOps = k.every((x) => x === 0) ? base : transformOps(ops, P, p, eta, m, Z);
+            const newOps = k.every((x) => x === 0) ? base : transformOps(ops, P, p, [[eta]], [m], [Z]);
             // BYU convention: no centring translation involves the internal coordinate
             if (!newOps || newOps.some((o) => isIdW(o.W) && !o.w[3].isZero())) continue;
             const key = form + "#" + newOps.map(opKey).sort().join(" "); // the operation set, order-independent
@@ -573,6 +578,7 @@ function rank(list: Candidate[], system: CrystalSystem): Candidate[] {
  * list incl. centrings) and q text in the same axes. Requires loadMoyo().
  */
 export function standardise(ops: SOp[], Qtext: string[]): Standardised | Fail {
+  if (Qtext.length !== 1) return standardiseMulti(ops, Qtext);
   const c = candidates(ops, Qtext);
   if ("ok" in c) return c;
   if (!c.list.length) return { ok: false, reason: "no standard setting with a (3+1)D Bravais-class q form" };
@@ -588,12 +594,301 @@ export function standardise(ops: SOp[], Qtext: string[]): Standardised | Fail {
     ok: true,
     sgNumber: c.sgNumber,
     symbol: best.symbol,
-    qActual: best.qActual,
+    qActual: [best.qActual],
     P: best.P.map((r) => r.map(String)),
     p: best.p.map(String),
-    eta: best.eta,
-    m: best.m.map((x) => toSafeInt(x, "internal shear entry")),
-    p4: "0",
+    E: [[best.eta]],
+    M: [best.m.map(String)],
+    p4: ["0"],
     alternates,
   };
+}
+
+/** Anchor the monoclinic ac-plane shear to its coefficient lattice instead
+ * of the supplied axes. Internal row HNF first removes input GL(d,Z). Physical
+ * row HNF then reduces the two equal-character coordinate directions. Its
+ * unimodular map may have arbitrarily large entries; the subsequent finite
+ * normaliser representatives are composed with this exact anchor. */
+function monoclinicAnchor(qs:Lin[][],names:string[],Ti:QMat):number[][] {
+  const coeff=qs.map(row=>names.flatMap((_,k)=>[0,1,2].map(j=>row.reduce((v,x,h)=>v.add(x.coef[k].mul(Ti[h][j])),Z))));
+  const den=coeff.flat().reduce((v,x)=>lcmB(v,x.d),1n);
+  const H=hnf(coeff.map(row=>row.map(x=>x.n*(den/x.d)))).H;
+  const axes=[0,2],columns=axes.map(j=>names.flatMap((_,k)=>H.map(row=>row[k*3+j])));
+  const U=hnf(columns).U.map(row=>row.map(x=>toSafeInt(x,'physical coefficient anchor')));
+  const A=[[U[0][0],0,U[0][1]],[0,1,0],[U[1][0],0,U[1][1]]],Ai=matInv(qmat(A));
+  return Ai[0].map((_,j)=>Ai.map(row=>toSafeInt(row[j],'physical coefficient anchor')));
+}
+
+// Pass-3 higher-dimensional naming rule; BYU agreement is measured, not required.
+/** Solve e H = target exactly in the full-rank row lattice. */
+function latticeCoordinates(H:QMat,target:QVec):number[]|null {
+  const d=H.length, pivots:number[]=[],A=H.map(r=>[...r]);let rank=0;
+  for(let j=0;j<target.length&&rank<d;j++) {
+    const k=A.findIndex((r,i)=>i>=rank&&!r[j].isZero());if(k<0)continue;
+    [A[rank],A[k]]=[A[k],A[rank]];const v=A[rank][j];A[rank]=A[rank].map(x=>x.div(v));
+    for(let i=rank+1;i<d;i++){const f=A[i][j];A[i]=A[i].map((x,h)=>x.sub(f.mul(A[rank][h])));}pivots.push(j);rank++;
+  }
+  if(rank!==d)return null;
+  const inv=matInv(H.map(r=>pivots.map(j=>r[j])));
+  const e=H.map((_,j)=>pivots.reduce((v,k,i)=>v.add(target[k].mul(inv[i][j])),Z));
+  if(e.some(x=>!x.isInt())||target.some((x,j)=>!x.eq(H.reduce((v,r,i)=>v.add(r[j].mul(e[i])),Z))))return null;
+  return e.map(x=>toSafeInt(x,'internal lattice coordinate'));
+}
+
+/** Complete shared-family seed/orbit solutions, without an entry bound on E.
+ * Each conventional seed coordinate is zero or one named parameter. Solve its
+ * coordinates in the HNF lattice, then solve all point-group images in that same
+ * lattice and retain every unimodular ordered tuple. */
+function orbitBases(H:QMat,names:string[],rotations:number[][][]):number[][][] {
+  const d=H.length,out=new Map<string,number[][]>();
+  const targets:QVec[]=[];
+  for(let a=-1;a<names.length;a++)for(let b=-1;b<names.length;b++)for(let c=-1;c<names.length;c++) {
+    const axes=[a,b,c];if(names.some((_,k)=>!axes.includes(k)))continue;
+    targets.push(names.flatMap((_,k)=>axes.map(v=>v===k?ONE:Z)));
+  }
+  for(const seed of targets) {
+    const first=latticeCoordinates(H,seed);if(!first)continue;
+    const rows=new Map<string,number[]>();rows.set(first.join(','),first);
+    for(const R of rotations) {
+      const target=names.flatMap((_,k)=>[0,1,2].map(j=>[0,1,2].reduce((v,h)=>v.add(seed[k*3+h].mulInt(R[h][j])),Z)));
+      const row=latticeCoordinates(H,target);if(row)rows.set(row.join(','),row);
+    }
+    const visit=(A:number[][])=>{if(A.length===d){if([1n,-1n].includes(imatDet(A.map(r=>r.map(BigInt)))))out.set(mkey(A),A);return;}for(const row of rows.values())visit([...A,row]);};
+    visit([first]);
+  }
+  return [...out.values()];
+}
+
+const multiCost=(form:string[],bIndex:number)=> {
+  const constants=form.reduce((v,row,i)=>v+row.split(',').reduce((w,t,j)=>w+(/^[-0-9]/.test(t)&&t!=='0'?(j+1)*10**(3-i):0),0),0);
+  const negative=form.reduce((v,row)=>v+row.split(',').filter(t=>/^-[0-9]/.test(t)).length,0);
+  return negative*1e9+bIndex*1e6+constants;
+};
+
+/** All candidate BYU-axes forms of the group (exported for tests/debugging). */
+type Prepared={basis:number[][];q0:Lin[][];form:string[];conventional:boolean;mp:QMat;cost:number};
+const multiPrepared=new Map<string,Prepared[]>();
+const multiBases=new Map<number,number[][][]>();
+interface MultiCandidate { symbol: SsgSymbol; bIndex: number; P: QMat; p: QVec; E: number[][]; M: QMat; qActual: string[]; basis: number[][]; conventional: boolean; operators: string }
+export function candidatesMulti(ops: SOp[], Qtext: string[]): { sgNumber: number; list: MultiCandidate[] } | Fail {
+  if (Qtext.length < 2 || Qtext.length > 3 || ops.some((o) => o.W.length !== 3+Qtext.length)) return { ok: false, reason: "expected d = 2 or 3 and matching operations" };
+  const names = paramsOf(Qtext).sort();
+  const qs: Lin[][] = Qtext.map(row => row.split(",").map(s => parseLinear(s,names)));
+  const q = qs[0];
+  if (q.length !== 3) return { ok: false, reason: `bad q "${Qtext[0]}"` };
+
+  const ops3: Op3[] = ops.map((o) => ({ R: o.W.slice(0, 3).map((r) => r.slice(0, 3)), t: o.w.slice(0, 3) }));
+  const id = identify(ops3, [[1, 0, 0], [0, 1, 0], [0, 0, 1]]);
+  if (!id.ok) return { ok: false, reason: id.reason };
+  const system = crystalSystemOf(id.number);
+  // x_conv = L x_std + s  =>  x_std = T x + t,  T = L^-1, t = -T s
+  const L = id.stdLinear.map((r) => r.map(numToQ));
+  const T = matInv(L);
+  const t = mv(T, id.stdOriginShift.map(numToQ)).map((x) => x.neg());
+
+  // the standard basic group
+  const reps = new Map<string, { R: number[][]; t: QVec }>();
+  const cents: QVec[] = [];
+  const Ti = L;
+  for (const o of ops3) {
+    const Rq = matMul(matMul(T, qmat(o.R)), Ti);
+    const R = Rq.map((r) => r.map((x) => toSafeInt(x, "operator matrix entry")));
+    const tt = vsub(vadd(mv(T, o.t), t), mv(Rq, t)).map((x) => x.mod1());
+    if (isIdW(R)) cents.push(tt);
+    const k = mkey(R);
+    if (!reps.has(k) || vkey(tt) < vkey(reps.get(k)!.t)) reps.set(k, { R, t: tt });
+  }
+  // the centring set may come from the ops (centrings) and from T (primitive -> conventional)
+  const centSet = new Map<string, QVec>();
+  for (const c of cents) centSet.set(vkey(c), c);
+  const tgens = [0, 1, 2].map((j) => T.map((r) => r[j]).map((x) => x.mod1()));
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const c of [...centSet.values()])
+      for (const v of tgens) {
+        const s = vadd(c, v).map((x) => x.mod1());
+        if (!centSet.has(vkey(s))) {
+          centSet.set(vkey(s), s);
+          grew = true;
+        }
+      }
+  }
+  const g: Group3 = { reps: [...reps.values()], cents: [...centSet.values()] };
+  // The d=1 quotient by the point group suppresses sign choices needed
+  // for fixed components of a second q. Retain each exact point-group lift.
+  const anchor=system==="monoclinic"?monoclinicAnchor(qs,names,L):undefined;
+  const norm = normaliser(g, system === "triclinic", T,anchor).flatMap(({N,n}) => g.reps.map(({R,t:rt})=>({N:imul(R,N),n:vadd(mv(qmat(R),n),rt)})));
+
+  const d=Qtext.length, list:MultiCandidate[]=[];
+  const bases:number[][][]=multiBases.get(d)??[];
+  const enumerate=(entries:number[])=>{
+    if(entries.length===d*d){const E=Array.from({length:d},(_,i)=>entries.slice(i*d,(i+1)*d));const det=imatDet(E.map(r=>r.map(BigInt)));if(det===1n||det===-1n)bases.push(E);return;}
+    for(const v of [0,1,-1])enumerate([...entries,v]);
+  };
+  if(!multiBases.has(d))enumerate([]);
+  const basisCost=(E:number[][])=>E.reduce((s,r,i)=>s+r.reduce((v,x,j)=>v+(i!==j&&x!==0?100:0)+(i===j&&x<=0?10:0),0),0);
+  bases.sort((A,B)=>basisCost(A)-basisCost(B)||(mkey(A)<mkey(B)?-1:mkey(A)>mkey(B)?1:0));
+  multiBases.set(d,bases);
+
+  const settings = system==='cubic' ? [ [[1,0,0],[0,1,0],[0,0,1]] ] : system==='monoclinic' ? [...B_SETTINGS.monoclinic, [[0,0,1],[1,0,0],[0,1,0]]] : B_SETTINGS[system];
+  const basisCache=multiPrepared,symbols=new Map<string,SsgSymbol|null>();
+  let winning:[number,number]|undefined,winningPrefix:string|undefined;
+  const basicPerSetting=new Map<number,string>();
+  // Search score levels lazily. Fallbacks remain eligible whenever the preferred
+  // level contains no valid lattice map. This changes work, never the minimum.
+  for(const preferredOnly of [true,false]) {
+  for(const [bIndex,Bn] of settings.entries()) for(const {N,n} of norm) {
+    if(winning&&winning[0]===0&&winning[1]<bIndex*1e6)continue;
+    const B=qmat(Bn),BN=matMul(B,qmat(N)),P=matMul(BN,T),p=vadd(mv(BN,t),mv(B,n)),Pi=matInv(P),pk=mkey(P);
+    // Cache by the exact HNF q lattice, not the input-relative affine map.
+    const coeff=qs.map(row=>names.flatMap((_,k)=>[0,1,2].map(j=>row.reduce((v,x,h)=>v.add(x.coef[k].mul(Pi[h][j])),Z))));
+    const D=coeff.flat().reduce((v,x)=>lcmB(v,x.d),1n),H=hnf(coeff.map(row=>row.map(x=>x.n*(D/x.d))));
+    if(H.H.length!==d)continue;
+    const U=H.U.map(row=>row.map(x=>toSafeInt(x,'internal basis')));
+    const rotations=ops.map(o=>matMul(matMul(P,qmat(o.W.slice(0,3).map(r=>r.slice(0,3)))),Pi).map(r=>r.map(x=>toSafeInt(x,"rotation"))));
+    const canonical=H.H.map(row=>row.map(x=>Q.of(x,D)));
+    const constants=U.map(row=>[0,1,2].map(j=>qs.reduce((v,r,l)=>v.add(r.reduce((w,x,h)=>w.add(x.c.mul(Pi[h][j]).mulInt(row[l])),Z)),Z)));
+    const centred=g.cents.map(c=>mv(B,c));
+    const cacheKey=[String(preferredOnly),names.join(','),system,mkey(canonical),mkey(constants),[...new Set(rotations.map(mkey))].sort().join(' '),centred.map(vkey).sort().join(' ')].join('|');
+    let prepared=basisCache.get(cacheKey);
+    if(!prepared){
+      if([...basisCache.values()].reduce((n,a)=>n+a.length,0)>1_000_000)basisCache.clear();
+      prepared=[];
+      const allBases=new Map(bases.map(A=>[mkey(A),A]));
+      for(const A of orbitBases(canonical,names,rotations))allBases.set(mkey(A),A);
+      for(const basis of allBases.values()){
+        const q0=basis.map(row=>[0,1,2].map(j=>({
+          coef:names.map((_,k)=>row.reduce((v,x,l)=>(x===0||canonical[l][k*3+j].isZero()?v:v.add(canonical[l][k*3+j].mulInt(x))),Z)),
+          c:row.reduce((v,x,l)=>(x===0||constants[l][j].isZero()?v:v.add(constants[l][j].mulInt(x))),Z)
+        })));
+        // Constants cannot repair a failed coefficient pattern. This is only
+        // pruning within the preferred score level; the fallback pass includes it.
+        const coefficientForm=conventional(q0.map(row=>row.map(x=>({...x,c:Z}))),names,system,rotations.map(W=>({W,w:[]})));
+        if(preferredOnly&&!coefficientForm)continue;
+        // Enumerate centred reciprocal congruences on free coordinates too.
+        // A shift of a fixed coordinate can require a compensating free shift.
+        // Keep the legacy representative 1 for integral fixed components.
+        const choices=q0.map(row=>{
+          let out:QVec[]=[[]];
+          for(const [j,x] of row.entries()){
+            const base=qi(x.c.floor()).neg();
+            const modulus=toSafeInt(centred.reduce((v,c)=>lcmB(v,c[j].d),1n),'centred reciprocal residue');
+            const count=x.coef.some(v=>!v.isZero())?modulus:x.c.isInt()?Math.max(2,modulus):modulus;
+            const ks=Array.from({length:count},(_,k)=>base.add(qi(k)));
+            out=out.flatMap(v=>ks.map(k=>[...v,k]));
+          }
+          return out.filter(mp=>centred.every(c=>c.reduce((v,x,j)=>v.add(x.mul(mp[j])),Z).isInt()));
+        });
+        let combined:QMat[]=[[]];for(const row of choices)combined=combined.flatMap(v=>row.map(mp=>[...v,mp]));
+        for(const mp of combined){
+          const q1=q0.map((row,i)=>row.map((x,j)=>({...x,c:mp[i][j].isZero()?x.c:x.c.add(mp[i][j])}))),form=coefficientForm?conventional(q1,names,system,rotations.map(W=>({W,w:[]}))):null;
+          if(preferredOnly!==Boolean(form))continue;
+          const text=form??q1.map(row=>formatQ(row,names));
+          prepared.push({basis,q0,form:text,conventional:form!==null,mp,cost:multiCost(text,0)});
+        }
+      }
+      // The bIndex contribution is constant across this array, so this exact
+      // score/prefix order is reusable for every affine lift and later record.
+      prepared.sort((a,b)=>a.cost-b.cost||(a.form[0]<b.form[0]?-1:a.form[0]>b.form[0]?1:0));
+      if(basisCache.size>=64)basisCache.delete(basisCache.keys().next().value!);basisCache.set(cacheKey,prepared);
+    }
+    // Rank descriptors before constructing symbols. A worse score cannot win
+    // after an exact valid candidate has established the current best level.
+    const score=(x:Prepared):[number,number]=>[Number(!x.conventional),x.cost+bIndex*1e6];
+    const compare=(a:[number,number],b:[number,number])=>a[0]-b[0]||a[1]-b[1];
+    let applyInternal:ReturnType<typeof internalTransformer>|null|undefined;
+    for(const item of prepared) {
+      const level=score(item);if(winning&&compare(level,winning)>0)break;
+      const {basis,q0,form,mp,conventional:preferred}=item;
+      // The basic group is identical throughout a normaliser orbit. A complete
+      // first q block is a prefix of full, before any phase letters. Once a valid
+      // smaller prefix exists, larger ones cannot win the symbol tie-break.
+      const basic=basicPerSetting.get(bIndex),prefix=basic===undefined?undefined:basic+'('+form[0]+')';
+      if(winning&&compare(level,winning)===0&&winningPrefix!==undefined&&prefix!==undefined&&prefix>winningPrefix)break;
+      const E=imul(basis,U),M=mp.map(row=>toM(row,P));
+      if(applyInternal===undefined){const base=transformOps(ops,P,p,U,Array.from({length:d},()=>[Z,Z,Z]),Array(d).fill(Z));applyInternal=base?internalTransformer(base,p):null;}
+      const newOps=applyInternal?applyInternal(basis,mp):transformOps(ops,P,p,E,M,Array(d).fill(Z));
+      if(!newOps||newOps.some(o=>isIdW(o.W)&&o.w.slice(3).some(x=>!x.isZero())))continue;
+      const operators=newOps.map(opKey).sort().join(' '),sk=form.join(';')+'|'+operators;
+      if(!symbols.has(sk))symbols.set(sk,ssgSymbolInAxes(newOps,form,system));
+      const symbol=symbols.get(sk);
+      if(symbol){
+        const prefix=symbol.basic+'('+form[0]+')';basicPerSetting.set(bIndex,symbol.basic);
+        if(winning&&(compare(level,winning)<0||(compare(level,winning)===0&&winningPrefix!==undefined&&prefix<winningPrefix)))list.length=0;
+        winning=level;winningPrefix=prefix;list.push({symbol,bIndex,P,p,E,M,basis,conventional:preferred,operators,qActual:q0.map((row,i)=>formatQ(row.map((x,j)=>({...x,c:x.c.add(mp[i][j])})),names))});
+      }
+    }
+  }
+  if(list.length)break;
+  }
+  return {sgNumber:id.number,list};
+}
+
+// Fitted algebraic rule: independent coordinate parameters, or an orbit of one
+// such seed under the basic point group. Validate coefficient relations exactly.
+// Parameter names follow seed axes, indexed only when independent q blocks coexist.
+function conventional(q:Lin[][], names:string[], system:CrystalSystem, ops:SOp[]):string[]|null {
+  const d=q.length, renamed=names.map(()=>''), owners=names.map(()=>new Set<number>());
+  for(const [i,row] of q.entries()) for(const x of row) x.coef.forEach((v,k)=>{if(!v.isZero())owners[k].add(i)});
+  const shared=owners.some(o=>o.size>1);
+  if(shared) {
+    const seed=q[0], introduced=new Set<number>();
+    for(const [j,x] of seed.entries()) {
+      const nz=x.coef.map((v,k)=>!v.isZero()?k:-1).filter(k=>k>=0);
+      if(nz.length>1 || nz.some(k=>!x.coef[k].eq(ONE)) || (nz.length&&!x.c.isZero()))return null;
+      for(const k of nz) {if(!introduced.has(k))renamed[k]=['a','b','g'][j];introduced.add(k);}
+    }
+    if(introduced.size!==names.length)return null;
+    const support=seed.filter(x=>x.coef.some(v=>!v.isZero())).length;
+    for(const row of q.slice(1)) {
+      const orbit=ops.some(o=>row.every((x,j)=>names.every((_,k)=>x.coef[k].eq(seed.reduce((v,y,h)=>v.add(y.coef[k].mulInt(o.W[h][j])),Z)))));
+      if(!orbit)return null;
+      const first=row.flatMap(x=>x.coef).find(v=>!v.isZero());
+      if(!first || (support>1 && first.sign()>0))return null;
+    }
+  } else {
+    const supports:number[][]=[];
+    for(const [i,row] of q.entries()) {
+      const support:number[]=[];
+      const coeff:QMat=[];
+      for(const [j,x] of row.entries())if(x.coef.some(v=>!v.isZero())){support.push(j);coeff.push(x.coef);}
+      if(!support.length)return null;
+      // Independent row parameters may be any nonsingular linear mixture after
+      // an allowed shear of physical axes. Compare their span, not their spelling.
+      let rank=0;const A=coeff.map(r=>[...r]);
+      for(let k=0;k<names.length&&rank<A.length;k++){
+        const at=A.findIndex((r,j)=>j>=rank&&!r[k].isZero());if(at<0)continue;
+        [A[rank],A[at]]=[A[at],A[rank]];const pivot=A[rank][k];A[rank]=A[rank].map(x=>x.div(pivot));
+        for(let j=rank+1;j<A.length;j++){const f=A[j][k];A[j]=A[j].map((x,h)=>x.sub(f.mul(A[rank][h])));}rank++;
+      }
+      if(rank!==support.length)return null;supports.push(support);
+    }
+    for(let i=1;i<d;i++)if(supports[i-1].join(',')>supports[i].join(','))return null;
+    // Conventional independent axial modulations occupy c, or b then c when
+    // their external directions differ. Independent planar rows occupy ab.
+    const axial=supports.filter(s=>s.length===1).map(s=>s[0]);
+    const directions=[...new Set(axial)].sort();
+    if(directions.length===1&&directions[0]!==2)return null;
+    if(directions.length===2&&directions.join(',')!=='1,2')return null;
+    if(supports.some(s=>s.length===2&&s.join(',')!=='0,1'))return null;
+  }
+  for(const row of q) for(const x of row) if(x.c.cmp(Q.of(-1,2))<0||x.c.cmp(ONE)>0||![1n,2n,3n].includes(x.c.d))return null;
+  if(!shared)return q.map((row,i)=>row.map((x,j)=>x.coef.some(v=>!v.isZero())?['a','b','g'][j]+String(i+1):x.c.toString()).join(','));
+  return q.map(row=>formatQ(row,renamed));
+}
+
+function standardiseMulti(ops:SOp[],q:string[]):Standardised | Fail {
+  const c=candidatesMulti(ops,q); if('ok' in c)return c;
+  if(!c.list.length)return {ok:false,reason:'no valid transformed superspace lattice'};
+  const cost=(x:MultiCandidate)=>multiCost((x.symbol.q.match(/\([^)]*\)/g)??[]).map(row=>row.slice(1,-1)),x.bIndex);
+  // Total order: BYU-like q form first, then fitted setting cost; symbol in Unicode codepoint order; HNF-relative
+  // basis complexity and entries; actual q; then exact serialized affine map.
+  // Never rank by the input-relative E: identity depends on the supplied setting.
+  const cmp=(a:string,b:string)=>a<b?-1:a>b?1:0;
+  const basisCost=(E:number[][])=>E.reduce((s,r,i)=>s+r.reduce((v,x,j)=>v+(i!==j&&x!==0?100:0)+(i===j&&x<=0?10:0),0),0);
+  const key=(x:MultiCandidate)=>[mkey(x.basis),x.operators,x.qActual.join(';')].join('|');
+  c.list.sort((a,b)=>Number(b.conventional)-Number(a.conventional)||cost(a)-cost(b)||cmp(a.symbol.full,b.symbol.full)||basisCost(a.basis)-basisCost(b.basis)||cmp(key(a),key(b)));
+  const best=c.list[0];
+  return {ok:true,sgNumber:c.sgNumber,symbol:best.symbol,qActual:best.qActual,
+    P:best.P.map(r=>r.map(String)),p:best.p.map(String),E:best.E,M:best.M.map(r=>r.map(String)),p4:q.map(()=>"0"),alternates:[]};
 }

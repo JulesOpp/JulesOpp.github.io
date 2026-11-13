@@ -31,16 +31,16 @@ function linText(coef: Q[], vars: string[], c0: Q): string {
  * The map from the parent's axes to the type's setting, as new coordinates in terms of the
  * old: x_std = P x + p and t' = m·x + η t + p4, written "(-y, x-y, -z-1/4; -t)".
  */
-export function affineText(t: Pick<Standardised, "P" | "p" | "eta" | "m" | "p4">): string {
+export function affineText(t: Pick<Standardised, "P" | "p" | "E" | "M" | "p4">): string {
   const xyz = ["x", "y", "z"];
   const ext = t.P.map((row, i) => linText(row.map((x) => Q.parse(x)), xyz, Q.parse(t.p[i])));
-  const int = linText([...t.m.map((x) => Q.of(x)), Q.of(t.eta)], [...xyz, "t"], Q.parse(t.p4));
+  const int = t.M.map((row, i) => linText([...row.map(Q.parse), ...t.E[i].map(x=>Q.of(x))], [...xyz, ...["t", "u", "v"].slice(0, t.E.length)], Q.parse(t.p4[i]))).join(", ");
   return `(${ext.join(", ")}; ${int})`;
 }
 
 /** Display an equivalent map with origin shifts in [0, 1): integer shifts lie in Σ_B = Z^n. */
-export function displayMap(t: Pick<Standardised, "P" | "p" | "eta" | "m" | "p4">): typeof t {
-  return { ...t, p: t.p.map((x) => Q.parse(x).mod1().toString()), p4: Q.parse(t.p4).mod1().toString() };
+export function displayMap(t: Pick<Standardised, "P" | "p" | "E" | "M" | "p4">): typeof t {
+  return { ...t, p: t.p.map((x) => Q.parse(x).mod1().toString()), p4: t.p4.map((x) => Q.parse(x).mod1().toString()) };
 }
 
 /** Build the hand-over before attempting browser storage, so build errors remain distinct. */
