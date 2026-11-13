@@ -8,7 +8,8 @@
 import { loadMoyo } from "../moyo";
 import { parseByuPage, PasteError } from "../paste";
 import type { GroupRecord } from "../ssg";
-import { keep, runSubgroups, SubgroupError, type SubFilter, type SubRow } from "../subfinder";
+import { keep, subgroupSteps, SubgroupError, type SubFilter, type SubRow, type SubResult } from "../subfinder";
+import type { SubRequest, SubResponse } from "./subworker";
 import type { CrystalSystem } from "../symbol";
 import { LABEL_RE, esc, symbolHtml } from "./flow";
 import { SEND_KEY, affineText, displayMap, prepareSend } from "./subflow";
@@ -35,6 +36,7 @@ const elPg = $<HTMLSelectElement>("ssgs-pg");
 const elSys = $<HTMLSelectElement>("ssgs-sys");
 const elCen = $<HTMLSelectElement>("ssgs-cen");
 const elRun = $<HTMLButtonElement>("ssgs-run");
+const elCancel = $<HTMLButtonElement>("ssgs-cancel");
 const elRunStatus = $("ssgs-run-status");
 const elResults = $("ssgs-results");
 
@@ -49,7 +51,14 @@ interface State {
 let state: State | null = null;
 let runId = 0;
 let pasted: GroupRecord | null = null;
-const supported = (rec: GroupRecord) => rec.d === 1;
+let activeWorker: Worker | null = null;
+const supported = (rec: GroupRecord) => rec.d >= 1 && rec.d <= 3;
+function stopRun(): void {
+  ++runId;
+  activeWorker?.terminate();
+  activeWorker = null;
+  elCancel.hidden = true;
+}
 const expanded = new Set<string>();
 const rowKey = (row: SubRow) => JSON.stringify([...row.generators].sort());
 
@@ -69,7 +78,7 @@ elByu.addEventListener("submit", (e) => {
 });
 
 function onPaste(): void {
-  ++runId;
+  stopRun();
   pasted = null;
   state = null;
   expanded.clear();
@@ -90,9 +99,9 @@ function onPaste(): void {
       elLabel.value = rec.label;
       syncLabel();
     }
-    const dNote = rec.d === 1 ? "" : ` This group has d = ${rec.d}; only d = 1 is supported for now.`;
+    const dNote = rec.d === 1 ? "" : ` d = ${rec.d}: type names use this tool’s own canonical setting.${rec.d === 3 ? " Cubic groups can take several minutes." : ""}`;
     elPasteStatus.innerHTML = `Read ${rec.label ? esc(rec.label) + " " : ""}<span class="mono">${esc(rec.sym)}</span>, ${rec.nops ?? "?"} operators.${esc(dNote)}`;
-    elPasteStatus.className = rec.d === 1 ? "ssgf-msg" : "ssgf-msg err";
+    elPasteStatus.className = "ssgf-msg";
     elRun.disabled = !supported(rec);
   } catch (e) {
     elPasteStatus.textContent = e instanceof PasteError ? e.message : "Could not read this text as a BYU group page: " + (e instanceof Error ? e.message : String(e));
@@ -120,39 +129,92 @@ const nextFrame = () =>
 async function run(): Promise<void> {
   const parent = pasted;
   if (!parent || !supported(parent)) return;
-  const id = ++runId;
+  stopRun();
+  const id = runId;
+  const raw = elPaste.value;
+  const f = { kIndex: Number(elK.value) };
+  state = null;
+  expanded.clear();
+  elResults.innerHTML = "";
   elRun.disabled = true;
+  elRunStatus.classList.remove("err");
+  elCancel.hidden = false;
   elRunStatus.innerHTML = '<span class="ssgf-spin" aria-hidden="true"></span> Computing…';
   elResults.setAttribute("aria-busy", "true");
-  const done = (msg: string) => {
+  const t0 = performance.now();
+  const finish = (message: string) => {
     if (id !== runId) return;
+    activeWorker?.terminate();
+    activeWorker = null;
+    elCancel.hidden = true;
     elRun.disabled = !(pasted && supported(pasted));
     elResults.removeAttribute("aria-busy");
-    elRunStatus.innerHTML = msg;
+    elRunStatus.textContent = message;
   };
+  const accept = (out: SubResult) => {
+    if (id !== runId) return;
+    state = { parent, parentSgNumber: out.parentSgNumber, name: out.parent, rows: out.rows, warnings: out.warnings, ms: performance.now() - t0 };
+    fillPointGroups(out.rows);
+    render();
+  };
+  let worker: Worker | null = null;
+  try {
+    worker = new Worker(new URL("./ssgsubw.js", import.meta.url), { type: "module" });
+  } catch {
+    // Construction can fail in browsers or policies without module-worker support.
+  }
+  if (worker) {
+    activeWorker = worker;
+    worker.onmessage = (event: MessageEvent<SubResponse>) => {
+      if (id !== runId) return;
+      const message = event.data;
+      if (message.type === "progress") {
+        elRunStatus.textContent = `Named ${message.done} of ${message.total} classes…`;
+      } else if (message.type === "rows") {
+        accept(message.result);
+        if (message.complete) finish("");
+      } else {
+        finish(message.message);
+        elRunStatus.classList.add("err");
+      }
+    };
+    worker.onerror = (event) => {
+      if (id !== runId) return;
+      event.preventDefault();
+      finish(event.message || "Subgroup worker failed.");
+      elRunStatus.classList.add("err");
+    };
+    elRunStatus.classList.remove("err");
+    worker.postMessage({ type: "run", raw, filter: f } satisfies SubRequest);
+    return;
+  }
+  elRunStatus.textContent = "Worker unavailable; computing here (Cancel is checked between classes)…";
   try {
     await moyoReady;
+    await nextFrame();
+    if (id !== runId) return;
+    for (const step of subgroupSteps(parent, f)) {
+      if (id !== runId) return;
+      accept(step.result);
+      elRunStatus.textContent = `Named ${step.done} of ${step.total} classes (main thread)…`;
+      await nextFrame();
+      if (id !== runId) return;
+    }
+    finish("");
   } catch (e) {
-    done(`<span class="err">Could not load the symmetry library (moyo-wasm): ${esc(e instanceof Error ? e.message : String(e))}</span>`);
-    return;
+    if (id !== runId) return;
+    const message = e instanceof SubgroupError || e instanceof PasteError ? e.message : "Internal error: " + (e instanceof Error ? e.message : String(e));
+    finish(message);
+    elRunStatus.classList.add("err");
   }
-  await nextFrame();
-  if (id !== runId) return;
-  const t0 = performance.now();
-  try {
-    const out = runSubgroups(parent, { kIndex: Number(elK.value) });
-    state = { parent, parentSgNumber: out.parentSgNumber, name: out.parent, rows: out.rows, warnings: out.warnings, ms: performance.now() - t0 };
-  } catch (e) {
-    state = null;
-    elResults.innerHTML = "";
-    const msg = e instanceof SubgroupError || e instanceof PasteError ? e.message : "Internal error: " + (e instanceof Error ? e.message : String(e));
-    done(`<span class="err">${esc(msg)}</span>`);
-    return;
-  }
-  fillPointGroups(state.rows);
-  done("");
-  render();
 }
+
+elCancel.addEventListener("click", () => {
+  stopRun();
+  elResults.removeAttribute("aria-busy");
+  elRun.disabled = !(pasted && supported(pasted));
+  elRunStatus.textContent = "Cancelled.";
+});
 
 elForm.addEventListener("submit", (e) => {
   e.preventDefault();
@@ -204,7 +266,7 @@ function render(): void {
     `<th scope="col">Index</th><th scope="col">t-index</th><th scope="col">k-index</th><th scope="col">Point group</th>` +
     `<th scope="col">Basic SG</th><th scope="col">Superspace group (type)</th><th scope="col">q</th>` +
     `<th scope="col">Conjugates</th><th scope="col">Maximal</th>` +
-    `<th scope="col"><abbr title="New coordinates (x', y', z'; t') of the type's setting in terms of the parent's (x, y, z; t)">Transformation</abbr></th>` +
+    `<th scope="col"><abbr title="New external and internal coordinates of the type's setting in terms of the parent's coordinates">Transformation</abbr></th>` +
     `</tr></thead><tbody>`;
   rows.forEach((r, i) => {
     const did = `ssgs-det-${i}`;

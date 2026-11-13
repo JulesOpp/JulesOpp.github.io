@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Superspace Subgroups · Julius Oppenheim</title>
-  <meta name="description" content="List the k-index-1 (translationengleiche) subgroups of a (3+1)D superspace group and name their types, in the browser">
+  <meta name="description" content="List the k-index-1 (translationengleiche) subgroups of a (3+d)D superspace group and name their types, in the browser">
   <link rel="stylesheet" href="../assets/style.css">
   <link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
   <script src="../assets/theme.js"></script>
@@ -120,18 +120,16 @@
     <p class="wip-note" role="note" style="border: 1px solid var(--accent); border-left-width: 4px; border-radius: 4px; padding: 0.5rem 0.8rem; background: var(--bg-soft); font-weight: 600;">Superspace Subgroups (in progress)</p>
     <h1>Superspace Subgroups</h1>
     <p class="date"><time datetime="2026-11-10">November 10, 2026</time></p>
-    <p>This page lists the subgroups of a (3+1)D superspace group that keep its
+    <p>This page lists the subgroups of a (3+d)D superspace group that keep its
     full superspace lattice: the subgroups of k-index 1, also called
     translationengleiche subgroups. It follows the layout of CELLSUB on the
     <a href="https://www.cryst.ehu.es/">Bilbao Crystallographic Server</a>, one
-    row per conjugacy class, and names the type of each subgroup in the style
-    of the <a href="https://iso.byu.edu/ssg.php">ISO(3+d)D project at BYU</a>.
+    row per conjugacy class, and names each subgroup type algorithmically.
     It is a companion to the <a href="superspace-group-finder.html">Superspace
     Group Finder</a>: any row can be sent there to find the 3D space groups of
     its commensurate sections.</p>
-    <p><b>Scope for now:</b> d = 1 (one modulation vector) and k-index 1 only.
-    Subgroups that lose lattice translations (k-index &gt; 1) and groups with
-    d = 2 or 3 are refused rather than answered wrongly.</p>
+    <p><b>Scope for now:</b> d = 1, 2, 3 and k-index 1 only.
+    Subgroups that lose lattice translations (k-index &gt; 1) are not yet handled.</p>
     <p><b>How to use.</b> The superspace-group tables belong to the ISO(3+d)D
     project at BYU and are not distributed with this page. As on the finder,
     open the group's BYU page, select everything (Cmd-A or Ctrl-A), copy it and
@@ -196,11 +194,13 @@
           </div>
           <div class="row">
             <button type="submit" class="primary" id="ssgs-run" disabled>List subgroups</button>
+            <button type="button" id="ssgs-cancel" hidden>Cancel</button>
             <span class="ssgf-msg" id="ssgs-run-status" aria-live="polite"></span>
           </div>
         </fieldset>
       </form>
 
+      <p class="note">For d = 2, 3 the type symbol is written in this tool’s own canonical setting; it agrees with the BYU ISO(3+d)D symbol for about 40% of groups.</p>
       <div id="ssgs-results" aria-live="polite"></div>
       <noscript><p>This tool needs JavaScript and WebAssembly.</p></noscript>
     </section>
@@ -214,44 +214,44 @@
       <li><b>Point group</b> and <b>Basic SG</b> are those of H's basic space
       group, in the type's setting (number in brackets as in International
       Tables A).</li>
-      <li><b>Superspace group (type)</b> is the type of H, written as BYU writes
-      it: the q family of the Bravais class in letters (a, b, g) and one phase
+      <li><b>Superspace group (type)</b> is the type of H in this tool’s canonical setting: the q family of the Bravais class in letters (a, b, g) and one phase
       letter per symmetry direction (0, s = 1/2, t = 1/3, q = 1/4, h = 1/6).
       Where several orthorhombic settings are tied, the other names are given
       after ≡; they are the same type.</li>
-      <li><b>q</b> is the subgroup's own modulation vector in that setting, a
-      member of the type's q family (for example (0,0,g) in a P-1(a,b,g) type).</li>
+      <li><b>q</b> lists the subgroup's own modulation vectors in that setting,
+      members of the type's q family (for example (0,0,g) in a P-1(a,b,g) type).</li>
       <li><b>Conjugates</b> is the number of subgroups in the conjugacy class;
       <b>Maximal</b> says whether no other k-index-1 subgroup lies between H and G.</li>
-      <li><b>Transformation</b> gives the coordinates (x′, y′, z′; t′) of the
-      type's setting in terms of the parent's (x, y, z; t). Press the index to
+      <li><b>Transformation</b> gives the external and internal coordinates of the
+      type's setting in terms of the parent's coordinates. Press the index to
       see the generators of H in the parent's axes, its symbol in those axes
       when the crystal system is unchanged, and the <i>Send to finder</i> link.</li>
     </ul>
 
     <h2>Method</h2>
     <p>Write the point group of G as pairs (R, ε) with R its 3D rotation and
-    ε = ±1 its action on the internal coordinate. For an incommensurate q the
-    pair (1, −1) is never in this group, so ε is a function of R and the point
+    ε its d × d integer action on the internal coordinates. For an incommensurate q the
+    pair (1, ε) has ε = 1, so ε is a function of R and the point
     group is isomorphic to the point group K of the basic space group. A
     subgroup of G with the same superspace lattice is then the full preimage of
     a subgroup P of K, and two such subgroups are conjugate in G exactly when
     their P are conjugate in K. So the rows are the conjugacy classes of
-    subgroups of K, and q is unchanged.</p>
+    subgroups of K, and the modulation module is unchanged.</p>
     <p>Each subgroup is identified from its operations: the basic space group
     by <a href="https://github.com/spglib/moyo">moyo</a> (compiled to
     WebAssembly), then a search over settings of that space group for the one
-    that brings q into a Bravais-class q form of International Tables C
-    (Table 9.8.3), in the axis and lattice conventions used by ISO(3+d)D.
+    that brings the modulation vectors into a canonical q family. For d = 1,
+    this uses the Bravais-class q forms of International Tables C
+    (Table 9.8.3) and the ISO(3+d)D axis and lattice conventions.
     Among the equivalent names that remain, a fixed choice rule picks one.
     The type names are worked out by this algorithm, not looked up; the rule
-    was checked offline against the ISO(3+d)D listings. If a subgroup cannot be identified, its row says so and a
+    uses the tool’s own canonical setting for d = 2, 3. If a subgroup cannot be identified, its row says so and a
     warning explains why.</p>
 
     <h2>Limitations</h2>
     <ul>
-      <li>d = 1 and k-index 1 only. CELLSUB's general subgroups (supercells and
-      changes of the internal lattice) are not yet handled.</li>
+      <li>d = 1, 2, 3 and k-index 1 only. CELLSUB's general subgroups (supercells and
+      changes of the internal lattice) are not yet handled. Cubic d = 3 parents can take several minutes; progress appears as classes are named, and Cancel stops the worker.</li>
       <li>Magnetic superspace groups are not handled.</li>
       <li>The symbol in the parent's axes is only given when the subgroup keeps
       the parent's crystal system.</li>
@@ -261,7 +261,7 @@
     <ul>
       <li>H. T. Stokes, D. M. Hatch and B. J. Campbell, ISO(3+d)D, ISOTROPY Software
       Suite, <a href="https://iso.byu.edu">iso.byu.edu</a>. The superspace-group
-      data you paste comes from here, and the type names follow its conventions.</li>
+      data you paste comes from here; it also supplies the reference conventions for d = 1.</li>
       <li>H. T. Stokes, B. J. Campbell and S. van Smaalen, Generation of
       (3+d)-dimensional superspace groups for describing the symmetry of modulated
       crystalline structures, <i>Acta Cryst.</i> A<b>67</b>, 45–55 (2011),

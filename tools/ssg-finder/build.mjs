@@ -1,6 +1,7 @@
 // Build the Superspace Group Finder page script.
 //   src/ui/main.ts      → ../../assets/blog/ssg-finder/ssgf.js   (finder page; ES module, minified, sourcemap)
 //   src/ui/subgroups.ts → ../../assets/blog/ssg-finder/ssgsub.js (subgroup page; same options)
+//   src/ui/subworker.ts → ../../assets/blog/ssg-finder/ssgsubw.js (module worker)
 //   @spglib/moyo-wasm/moyo_wasm_bg.wasm → ../../assets/blog/ssg-finder/
 // Ships no BYU data (decision D1): only our code, moyo's JS glue and moyo's wasm.
 import { build } from "esbuild";
@@ -35,6 +36,13 @@ await build({
   entryPoints: [join(here, "src", "ui", "subgroups.ts")],
   outfile: join(out, "ssgsub.js"),
   banner: { js: `/* Superspace subgroups (k-index 1). ${moyoNote} */` },
+});
+
+await build({
+  ...common,
+  entryPoints: [join(here, "src", "ui", "subworker.ts")],
+  outfile: join(out, "ssgsubw.js"),
+  banner: { js: `/* Superspace subgroup worker. ${moyoNote} */` },
 });
 
 const require = createRequire(import.meta.url);

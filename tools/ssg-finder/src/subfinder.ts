@@ -1,5 +1,5 @@
 // Orchestration for the subgroup tool: pasted BYU page + filters -> rows of k-index-1
-// subgroup classes, each identified as a BYU type. Pure (no DOM). Requires loadMoyo() first.
+// subgroup classes, each named in this tool's deterministic canonical setting. Pure (no DOM). Requires loadMoyo() first.
 //
 // pointGroup notation: the HM point-group symbol of the subgroup's basic space group, obtained
 // from the standardised basic symbol by dropping the centring letter, screw subscripts
@@ -37,7 +37,7 @@ export interface SubRow {
   sgSymbol: string;
   /** Symbol in the parent's axes; null when the crystal system differs from the parent's or none exists. */
   inParentAxes: string | null;
-  /** BYU type of the subgroup; null only if standardisation failed (a warning is then added). */
+  /** Canonical type of the subgroup; null only if standardisation failed (a warning is then added). */
   type: Standardised | null; // when null, pointGroup "?", sgNumber 0, sgSymbol "?"
   /** xyzt operators of H in the parent axes, centrings excluded. */
   generators: string[];
@@ -66,16 +66,39 @@ function generatorsOf(rec: GroupRecord, ops: SOp[]): string[] {
   return gens;
 }
 
-export function runSubgroups(raw: string | GroupRecord, f: SubFilter): { parent: string; parentSgNumber: number; rows: SubRow[]; warnings: string[] } {
+export interface SubResult {
+  parent: string;
+  parentSgNumber: number;
+  rows: SubRow[];
+  warnings: string[];
+}
+
+/** The third argument is the current filtered snapshot, for incremental displays. */
+export type SubProgress = (done: number, total: number, partial: SubResult) => void;
+
+export function runSubgroups(raw: string | GroupRecord, f: SubFilter, onProgress?: SubProgress): SubResult {
+  let result!: SubResult;
+  for (const step of subgroupSteps(raw, f)) {
+    result = step.result;
+    onProgress?.(step.done, step.total, result);
+  }
+  return result;
+}
+
+/** Shared by the synchronous API and the yielding main-thread fallback. */
+export function* subgroupSteps(raw: string | GroupRecord, f: SubFilter): Generator<{ done: number; total: number; result: SubResult }> {
   const rec = typeof raw === "string" ? parseByuPage(raw) : raw;
-  if (rec.d !== 1) throw new SubgroupError("only d = 1 is supported for now");
   if (f.kIndex !== 1) throw new SubgroupError("only k-index 1 is supported for now");
 
   const warnings: string[] = [];
   const parentSgNumber = parentNumber(rec);
   const parentSystem = crystalSystemOf(parentSgNumber);
   const rows: SubRow[] = [];
-  for (const c of tSubgroups(rec)) {
+  const classes = tSubgroups(rec);
+  let done = 0;
+  const snapshot = () => ({ done, total: classes.length, result: { parent: rec.sym, parentSgNumber, rows: rows.filter(r => keep(r, f)), warnings: [...warnings] } });
+  yield snapshot();
+  for (const c of classes) {
     const st = standardise(c.ops, rec.q);
     const idx = `index ${c.index}, ${c.pointOps.length} point operations`;
     if (isFail(st)) {
@@ -85,6 +108,8 @@ export function runSubgroups(raw: string | GroupRecord, f: SubFilter): { parent:
         pointGroup: "?", sgNumber: 0, sgSymbol: "?", inParentAxes: null, type: null,
         generators: generatorsOf(rec, c.ops),
       });
+      ++done;
+      yield snapshot();
       continue;
     }
     const type = st;
@@ -103,8 +128,9 @@ export function runSubgroups(raw: string | GroupRecord, f: SubFilter): { parent:
       type,
       generators: generatorsOf(rec, c.ops),
     });
+    ++done;
+    yield snapshot();
   }
-  return { parent: rec.sym, parentSgNumber, rows: rows.filter((r) => keep(r, f)), warnings };
 }
 
 /** Filter test. Rows whose type could not be identified always pass (they carry a warning). */

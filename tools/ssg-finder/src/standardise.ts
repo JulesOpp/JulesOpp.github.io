@@ -1,4 +1,5 @@
-// Standard (BYU-convention) setting and type name of a (3+1)D superspace group (d = 1).
+// Deterministic canonical setting and type name of a (3+d)D superspace group (d = 1, 2, 3).
+// d = 1 follows BYU conventions; d = 2, 3 use this tool's own canonical setting.
 //
 // Input: the group's operations (canonical (3+1)D list incl. centrings, any setting) and its q
 // text in those axes. Output: the type symbol (ssgSymbolInAxes in the standard setting, q written
