@@ -554,7 +554,7 @@ function rank(list: Candidate[], system: CrystalSystem): Candidate[] {
   const nz = (c: Candidate) => c.qActual.split(",").filter((x) => /\d/.test(x) && x !== "0").length;
   const cmp = (a: Candidate, b: Candidate) => {
     if (a.bIndex !== b.bIndex) return a.bIndex - b.bIndex;
-    const sa = a.symbol.shifts, sb = b.symbol.shifts;
+    const sa = a.symbol.shifts[0], sb = b.symbol.shifts[0];
     if (sa.length === sb.length)
       for (const i of letterOrder(system, sa.length)) {
         const d = VALUE.indexOf(sa[i]) - VALUE.indexOf(sb[i]);
