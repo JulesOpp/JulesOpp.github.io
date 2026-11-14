@@ -339,3 +339,62 @@ both residue fields. Eliminating and projecting therefore cannot reject a map
 in the previous bounded search. Source hashes include `affine_search.py`.
 Per-label and incremental/final elapsed times all use the same monotonic clock,
 so wall-clock changes do not corrupt timing or full-corpus estimates.
+
+## 6. k-index subgroup fixtures (d = 1)
+
+`reference/ksubgroups.py:k_subgroups(rec, k, db=None)` enumerates every point
+subgroup P and translation lattice Σ′ with `[Σ:Σ′]=k`, modulo conjugation by G.
+This session supports d=1 only; k=1 delegates identification and ordering to
+`t_subgroups`. For k>1 the classes sort by `(index, numeric BYU label, sigma,
+pg_ops, tw)`. Passing `db={}` disables catalogue identification for public hand
+records. `sublattices(n,k)` itself supports any positive n and k.
+
+Fixtures live only in `local/fixtures/ksubgroups/d1/k<k>/<label>.json`.
+Their top-level fields are `label`, `d`, `k_index`, `sym`, `order=|K|`, and
+`classes`. Each class retains the §5 fields and adds:
+
+- `sigma`: integer lower row HNF in the parent's full Σ basis, including
+  centrings. Its determinant is `k_index`; its transpose is the column basis.
+- `kind`: `"3d"` if the internal intersection is unchanged, otherwise
+  `"internal"` if the external projection is unchanged, otherwise `"mixed"`.
+- `tw`: the rational translation of each corresponding `pg_ops` operator,
+  reduced modulo Σ′ in lattice coordinates and returned in parent coordinates.
+- `t_index=|K|/|P|`, `k_index=[Σ:Σ′]`, and `index=t_index*k_index`.
+- `class_size`: the orbit length of the pair (Σ′,H) under G, including
+  conjugation by parent translations. The representative minimizes the key
+  `(sigma, sorted (W,w modulo Σ′))` in parent lattice coordinates.
+
+For unique identification, the map fields `P,p,E,M,p4` are flattened exactly
+as in §5 and map the **rebased** subgroup onto the identified record. They are
+not a direct map from the original parent coordinates. Reconstruct the exact
+primitive change of coordinates S using `rebase(rec, ops, sigma)`; it returns
+`(rec2,S)` with S=B⁻¹ and B in block form `[[A,0],[C,D]]`, and
+`q′=D⁻¹(q A-C)`. The fixture contains no approximate numbers for these fields.
+Identification reuses the k=1 candidate filters and bounded equivalence search,
+restricted to the same dimension and basic SG. A nonunique class has
+`byu=null`, `matches`, and `sg` and stops generation at the sample gate.
+
+`make_ksubgroup_fixtures.py --sample --resume [--jobs N] [--k 2 3 4]`
+measures 30 d=1 parents across every crystal system present in that dimension,
+including the largest point-group order. Checkpoints and NOTES.md stay under
+`local/task10-logs/`. Per-parent metrics include seconds, classes,
+identification counts, `invariant_lattices` (the number of invariant (P,Σ′)
+pairs), and `complement_candidates` (translation-generator tuples tried).
+NOTES.md projects each k's worker time by crystal-system sample means and
+divides by the effective worker count, excluding startup, imbalance and bias.
+No full sweep is allowed until all 90 sample checkpoints identify every class
+uniquely and all three projected wall times are at most two hours.
+
+Omit `--sample` to write full fixtures after passing that gate. Workers clamp
+to 1–4 and set numerical-library thread counts to one before imports. Each
+atomic per-parent checkpoint binds the source files and the complete d=1 corpus
+in `_signature`, binds its content in `_content_sha256`, and records `_seconds`,
+`_stats`, `_identification`, and `_failures`. Resume accepts only matching,
+checksum-valid successful checkpoints. Sample and full summary files are
+updated after each completed batch. Nothing under `local/` may be staged.
+
+Public tests use hand records only. The plan's P−1 k=2 count of 30 means
+`t_index=1` (total index 2, the IT A1 analogue); full enumeration additionally
+has 15 translation-only classes, for 45 overall. Local tests are skipped without
+the corpus: every d=1 parent at k=2 must identify uniquely, and a fixed-seed
+sample of 20 parents compares against independent finite-group subgroup joining.
