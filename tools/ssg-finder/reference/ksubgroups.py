@@ -198,8 +198,8 @@ def k_subgroups(rec,k,db=None,*,stats=None):
     db={} suppresses catalogue identification for public synthetic tests. stats
     receives invariant_lattices (sum over P) and complement_candidates counts.
     """
-    if rec['d'] != 1:
-        raise ValueError('this implementation is gated to d=1')
+    if rec['d'] not in (1,2,3):
+        raise ValueError('superspace dimension d must be 1, 2 or 3')
     if k < 1:
         raise ValueError('positive index required')
     L,ops,idx,lifts,table = context(rec)

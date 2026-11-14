@@ -304,7 +304,7 @@ nonemptiness, compensable P21 screw phases, primitive-to-centred rational P maps
 negative scalar origin removal, and mixed/nonscalar/coupled skip cases.
 
 
-### 5.4 Simultaneous affine feasibility sieve
+### 5.4 Simultaneous affine feasibility and internal search
 
 Subgroup matching supplies an optional `e_candidates` callback to the exact
 oracle. Other callers retain the original bounded search. For product lattices
@@ -328,10 +328,17 @@ Diophantine equations. Smith form gives their full affine integer solution
 lattice; projection onto E followed by HNF retains all congruences. The projected
 lattice is **not saturated**. Empty solutions, or an affine residue space whose
 matrices are all singular modulo 2 or modulo 3, reject the fixed P. Otherwise,
-exact coset membership filters the original bounded E stream before solving M
-and origins. The callback preserves the original candidate order and bound; it
-does not enumerate the projected affine basis using the old coefficient bound.
-Every accepted map still passes the independent exact checker.
+d=1 retains the original bounded E stream, filtered by exact coset membership.
+For d>1, try feasible ±I first, then sparse points of the affine E lattice:
+centre the offset modulo its row HNF, and add at most d basis vectors with
+nonzero coefficients in {±1,±2}. This allows congruences to force matrix entries
+outside the old homogeneous coefficient bound. The original filtered stream
+follows as a fallback, with duplicate matrices suppressed. Both searches remain
+bounded; failure is not a proof of inequivalence for arbitrary settings.
+Every proposed map still solves M and the common origin and passes the
+independent exact checker. Public synthetic mirror regressions combine rational
+q offsets and half-period phases to require an internal matrix entry of size 3
+in both d=2 and d=3; they contain no catalogue records.
 
 These are necessary conditions: any originally accepted map supplies integer
 E,J and affine lifts satisfying the system, and unimodular E is nonsingular over
@@ -340,12 +347,13 @@ in the previous bounded search. Source hashes include `affine_search.py`.
 Per-label and incremental/final elapsed times all use the same monotonic clock,
 so wall-clock changes do not corrupt timing or full-corpus estimates.
 
-## 6. k-index subgroup fixtures (d = 1)
+## 6. k-index subgroup oracle (d = 1, 2, 3)
 
 `reference/ksubgroups.py:k_subgroups(rec, k, db=None)` enumerates every point
 subgroup P and translation lattice Σ′ with `[Σ:Σ′]=k`, modulo conjugation by G.
-This session supports d=1 only; k=1 delegates identification and ordering to
-`t_subgroups`. For k>1 the classes sort by `(index, numeric BYU label, sigma,
+The oracle accepts d=1,2,3; k=1 delegates identification and ordering to
+`t_subgroups`. Supply the dimension's catalogue explicitly for d=2,3;
+the default catalogue and the fixture-generation CLI still target d=1. For k>1 the classes sort by `(index, numeric BYU label, sigma,
 pg_ops, tw)`. Passing `db={}` disables catalogue identification for public hand
 records. `sublattices(n,k)` itself supports any positive n and k.
 
@@ -398,3 +406,9 @@ Public tests use hand records only. The plan's P−1 k=2 count of 30 means
 has 15 translation-only classes, for 45 overall. Local tests are skipped without
 the corpus: every d=1 parent at k=2 must identify uniquely, and a fixed-seed
 sample of 20 parents compares against independent finite-group subgroup joining.
+
+For subsequent page integration, cap k at 3 for d=1, 2 for d=2, and 1 for d=3.
+The oracle retains k=4 for local validation and performance work. Higher-d
+k=3 extrapolations alone do not justify enabling that option. Full higher-d
+fixture sweeps remain separate from sample validation and require their own
+runtime decision. These limits do not change the current page implementation.

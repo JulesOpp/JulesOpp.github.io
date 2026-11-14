@@ -2,8 +2,8 @@
 
 Only product lattices L3 x Z^d are handled. Other presentations use the original
 oracle unchanged. The affine integer E lattice is never saturated: its finite
-congruences are essential. This module proposes no maps; check_map remains the
-independent authority for every accepted result.
+congruences are essential. For d>1, a bounded search in this affine coset also
+proposes internal maps; check_map independently verifies every accepted result.
 """
 import itertools
 import math
@@ -268,14 +268,56 @@ def feasible_e_lattice(A, B, P, Pi):
     return integer_projection([r[:-1] for r in residual],[r[-1] for r in residual],ne,d)
 
 
+def _coset_candidates(lattice):
+    """Sparse unimodular points with affine HNF coefficients bounded by two.
+
+    Reduce the offset modulo the row basis first: Smith elimination may return
+    an arbitrarily large representative. Centre each pivot residue at zero.
+    Congruences (unlike the old homogeneous E bound) can force entries >2.
+    Try at most d nonzero coefficients to keep this preliminary search small.
+    The original homogeneous stream follows, retaining its previous coverage.
+    This remains a bounded search, not a GL(d,Z) decision procedure.
+    """
+    offset = list(lattice.offset)
+    for pivot, row in lattice.pivots:
+        q = (offset[pivot] + row[pivot]//2)//row[pivot]
+        offset = [x-q*y for x,y in zip(offset,row)]
+    d = lattice.d
+    if abs(_det(offset,d)) == 1:
+        yield [offset[i*d:(i+1)*d] for i in range(d)]
+    for support in range(1,min(d,len(lattice.basis))+1):
+        for inds in itertools.combinations(range(len(lattice.basis)),support):
+            for coeffs in itertools.product((1,-1,2,-2),repeat=support):
+                v = [x+sum(c*lattice.basis[i][j] for i,c in zip(inds,coeffs))
+                     for j,x in enumerate(offset)]
+                if abs(_det(v,d)) == 1:
+                    yield [v[i*d:(i+1)*d] for i in range(d)]
+
+
 def e_candidates(A, B, P, Pi):
-    """Filter the original bounded E stream, preserving its order and bounds."""
+    """Search the affine coset in d>1, then the original bounded E stream.
+
+    Keep d=1's original stream and order exactly. For nonproduct lattices the
+    simultaneous equations are unavailable, so use the original stream only.
+    """
     lattice = feasible_e_lattice(A,B,P,Pi)
     if lattice is None:
         yield from se._e_candidates(A,B,P,Pi)
         return
     if lattice.empty or not all(lattice.has_unimodular_residue(p) for p in (2,3)):
         return
+    yielded = set()
+    if A.d > 1:
+        # Cheap familiar maps first, then coset points outside the old cube.
+        eye = se.im.eye(A.d)
+        for E in itertools.chain((eye,[[-x for x in row] for row in eye]),
+                                 _coset_candidates(lattice)):
+            key = tuple(sum(E,[]))
+            if key not in yielded and lattice.contains(E):
+                yielded.add(key)
+                yield E
     for E in se._e_candidates(A,B,P,Pi):
-        if lattice.contains(E):
+        key = tuple(sum(E,[]))
+        if key not in yielded and lattice.contains(E):
+            yielded.add(key)
             yield E

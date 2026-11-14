@@ -93,12 +93,13 @@ def test_simultaneous_sieve_skips_coupled_lattice():
     assert sieve(a,a) is None
 
 
-def test_sieved_stream_is_original_bounded_stream_subsequence(monkeypatch):
-    a,b=parallel(screw=True,phase=True),parallel(screw=True)
+def test_d1_sieved_stream_is_original_bounded_stream_subsequence(monkeypatch):
+    a=dict(sym='synthetic screw',cls='',d=1,q=['0,0,a'],params=['a'],
+           gen=['-x,-y,z+1/2,t+1/2'],cen=[])
+    b=dict(a,gen=['-x,-y,z+1/2,t'])
     A,B=se.prep(a),se.prep(b)
     P=se.mat(se.im.eye(3))
-    candidates=[[[1,0,0],[0,1,0],[0,0,1]],[[1,1,0],[0,1,0],[0,0,1]],
-                [[-1,0,0],[0,1,0],[0,0,1]]]
+    candidates=[[[1]],[[-1]]]
     monkeypatch.setattr(se,"_e_candidates",lambda *args: iter(candidates))
     lattice=sieve(a,b)
     assert list(af.e_candidates(A,B,P,P)) == [E for E in candidates if lattice.contains(E)]
@@ -127,3 +128,32 @@ def test_fixture_elapsed_time_uses_monotonic_clock(tmp_path, monkeypatch):
     monkeypatch.setattr(m.time,"time",lambda: (_ for _ in ()).throw(AssertionError("wall clock used")))
     result=m.work("1.1.1.1",out=tmp_path)
     assert result[3] == 3.5
+
+
+@pytest.mark.parametrize('d',[2,3])
+def test_public_mirror_affine_coset(d, monkeypatch):
+    # Independently constructed mirror: thirds in q and half-period phase.
+    # Integrality forces E[0,0]=2 (mod 3), E[1,0]=0 (mod 3);
+    # the mirror phase forces that first column to be even,odd,(even).
+    tails=['t','u','v'][:d]
+    a=dict(sym='synthetic mirror',cls='',d=d,params=list('abc')[:d],
+           q=['1/3,0,a','0,0,b','0,0,c'][:d],cen=[],
+           gen=['x,-y,z,'+','.join(x+('+1/2' if i==0 else '') for i,x in enumerate(tails))])
+    b=dict(a,q=['2/3,0,a','0,0,b','0,0,c'][:d],
+           gen=['x,-y,z,'+','.join(x+('+1/2' if i==1 else '') for i,x in enumerate(tails))])
+    E=se.im.eye(d); E[0][:2]=[2,1];E[1][:2]=[3,1]
+    M=[[0]*3 for _ in range(d)]; M[1][0]=-1
+    known=dict(P=se.im.eye(3),p=[0]*3,E=E,M=M,p4=[0]*d)
+    q=se.q_generic(a)
+    assert se.check_map(a,q,b,known)
+    A,B=se.prep(a),se.prep(b)
+    P=se.mat(se.im.eye(3))
+    lattice=af.feasible_e_lattice(A,B,P,P)
+    assert lattice.contains(E)
+    # Isolate the exact internal search at the known external identity.
+    import numpy as np
+    N=se.mm(B.T,se.im.inv_rat(A.T))
+    monkeypatch.setattr(se,'normaliser_candidates',lambda *args:[np.array(N,dtype=int)])
+    result=se.equivalent(a,q,b,e_candidates=af.e_candidates)
+    assert result is not None
+    assert se.check_map(a,q,b,result)
