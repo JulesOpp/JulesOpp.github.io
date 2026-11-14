@@ -66,6 +66,21 @@ def test_k1(name):
     assert [{k:r[k] for k in old[0]} for r in new] == old
 
 
+@pytest.mark.parametrize('param', ['a', 'a1', 'g2', 'A1'])
+def test_rebase_implicit_q_multiplication(param):
+    rec = dict(sym='synthetic', d=1, q=[f'-2{param},{param},1/3'],
+               params=[param], cen=[], gen=[])
+    rebased, S = ks.rebase(rec, ks.exact.build_ops(rec), ks.im.eye(4))
+    assert S == ks.im.eye(4)
+    # Identity rebasing preserves every component exactly, with explicit '*'.
+    assert rebased['q'] == [f'-2*{param},{param},1/3']
+    from fractions import Fraction
+    from ssg_descent import eval_q
+    expected = [[Fraction(-4, 5), Fraction(2, 5), Fraction(1, 3)]]
+    assert eval_q(rec['q'], {param: Fraction(2, 5)}) == expected
+    assert ks.exact.eval_q(rebased, {param: Fraction(2, 5)}) == expected
+
+
 HAVE = (Path(__file__).resolve().parents[1]/'local/data').is_dir()
 
 

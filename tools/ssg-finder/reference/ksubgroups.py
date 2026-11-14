@@ -8,6 +8,7 @@ import os
 for _name in ('OPENBLAS_NUM_THREADS', 'OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'VECLIB_MAXIMUM_THREADS'):
     os.environ[_name] = '1'
 import itertools
+import re
 import sys
 from fractions import Fraction as F
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -169,7 +170,7 @@ def rebase(rec, ops, sigma):
     C = sp.Matrix([r[:3] for r in B[3:]])
     D = sp.Matrix([r[3:] for r in B[3:]])
     symbols = {p:sp.Symbol(p) for p in rec['params']}
-    Q = sp.Matrix([[sp.sympify(x,locals=symbols) for x in row.split(',')] for row in rec['q']])
+    Q = sp.Matrix([[sp.sympify(re.sub(r'(\d)([A-Za-z])', r'\1*\2', x),locals=symbols) for x in row.split(',')] for row in rec['q']])
     Q2 = D.inv()*(Q*A-C)
     q = [','.join(str(sp.expand(Q2[i,j])) for j in range(3)) for i in range(rec['d'])]
     rec2 = dict(sym='<rebased subgroup>',cls='',d=rec['d'],q=q,params=list(rec['params']),cen=[],gen=gen)

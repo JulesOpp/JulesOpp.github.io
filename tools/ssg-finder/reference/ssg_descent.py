@@ -97,7 +97,7 @@ def eval_q(qsym, params):
         row = []
         for comp in q.split(","):
             comp = comp.strip()
-            expr = comp
+            expr = re.sub(r'(\d)([A-Za-z])', r'\1*\2', comp)
             for k in sorted(params, key=len, reverse=True):
                 expr = re.sub(rf"(?<![a-z0-9]){k}(?![0-9])", f"({params[k]})", expr)
             row.append(Fr(_fr_eval(expr)))
