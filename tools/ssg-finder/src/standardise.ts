@@ -668,6 +668,7 @@ const multiCost=(form:string[],bIndex:number)=> {
 
 /** All candidate BYU-axes forms of the group (exported for tests/debugging). */
 type Prepared={basis:number[][];q0:Lin[][];form:string[];conventional:boolean;mp:QMat;cost:number};
+type PreparedFamily={basis:number[][];q0:Lin[][];variants:{mp:QVec;text:string|undefined;preferred:boolean;cost:number}[][];remaining:number[];minimum:number};
 const multiPrepared=new Map<string,Prepared[]>();
 const multiBases=new Map<number,number[][][]>();
 interface MultiCandidate { symbol: SsgSymbol; bIndex: number; P: QMat; p: QVec; E: number[][]; M: QMat; qActual: string[]; basis: number[][]; conventional: boolean; operators: string }
@@ -733,12 +734,19 @@ export function candidatesMulti(ops: SOp[], Qtext: string[]): { sgNumber: number
 
   const settings = system==='cubic' ? [ [[1,0,0],[0,1,0],[0,0,1]] ] : system==='monoclinic' ? [...B_SETTINGS.monoclinic, [[0,0,1],[1,0,0],[0,1,0]]] : B_SETTINGS[system];
   const basisCache=multiPrepared,symbols=new Map<string,SsgSymbol|null>();
+  const familyCache=new Map<string,PreparedFamily[]>();
   let winning:[number,number]|undefined,winningPrefix:string|undefined;
   const basicPerSetting=new Map<number,string>();
   // Search score levels lazily. Fallbacks remain eligible whenever the preferred
   // level contains no valid lattice map. This changes work, never the minimum.
   for(const preferredOnly of [true,false]) {
-  for(const [bIndex,Bn] of settings.entries()) for(const {N,n} of norm) {
+  // Seed the fallback with the exact lowest eligible descriptor cost of each
+  // affine lift until one is valid. Its cost is then a proven upper bound.
+  // The full traversal restarts below with that bound and an empty list, so
+  // even equal rank keys retain the original affine-lift/tie order.
+  for(const minimumOnly of preferredOnly?[false]:[true,false]) {
+  if(!minimumOnly)list.length=0;
+  settingSearch: for(const [bIndex,Bn] of settings.entries()) for(const {N,n} of norm) {
     if(winning&&winning[0]===0&&winning[1]<bIndex*1e6)continue;
     const B=qmat(Bn),BN=matMul(B,qmat(N)),P=matMul(BN,T),p=vadd(mv(BN,t),mv(B,n)),Pi=matInv(P),pk=mkey(P);
     // Cache by the exact HNF q lattice, not the input-relative affine map.
@@ -750,11 +758,16 @@ export function candidatesMulti(ops: SOp[], Qtext: string[]): { sgNumber: number
     const canonical=H.H.map(row=>row.map(x=>Q.of(x,D)));
     const constants=U.map(row=>[0,1,2].map(j=>qs.reduce((v,r,l)=>v.add(r.reduce((w,x,h)=>w.add(x.c.mul(Pi[h][j]).mulInt(row[l])),Z)),Z)));
     const centred=g.cents.map(c=>mv(B,c));
-    const cacheKey=[String(preferredOnly),names.join(','),system,mkey(canonical),mkey(constants),[...new Set(rotations.map(mkey))].sort().join(' '),centred.map(vkey).sort().join(' ')].join('|');
+    const costLimit=winning&&winning[0]===Number(!preferredOnly)?winning[1]-bIndex*1e6:undefined;
+    const familyKey=[String(preferredOnly),names.join(','),system,mkey(canonical),mkey(constants),[...new Set(rotations.map(mkey))].sort().join(' '),centred.map(vkey).sort().join(' ')].join('|');
+    const cacheKey=[String(minimumOnly),String(costLimit),familyKey].join('|');
     let prepared=basisCache.get(cacheKey);
     if(!prepared){
       if([...basisCache.values()].reduce((n,a)=>n+a.length,0)>1_000_000)basisCache.clear();
       prepared=[];
+      let families=familyCache.get(familyKey);
+      if(!families){
+      families=[];
       const allBases=new Map(bases.map(A=>[mkey(A),A]));
       for(const A of orbitBases(canonical,names,rotations))allBases.set(mkey(A),A);
       for(const basis of allBases.values()){
@@ -764,7 +777,8 @@ export function candidatesMulti(ops: SOp[], Qtext: string[]): { sgNumber: number
         })));
         // Constants cannot repair a failed coefficient pattern. This is only
         // pruning within the preferred score level; the fallback pass includes it.
-        const coefficientForm=conventional(q0.map(row=>row.map(x=>({...x,c:Z}))),names,system,rotations.map(W=>({W,w:[]})));
+        const coefficientQ=q0.map(row=>row.map(x=>({...x,c:Z}))),rotationOps=rotations.map(W=>({W,w:[]}));
+        const coefficientForm=conventional(coefficientQ,names,system,rotationOps);
         if(preferredOnly&&!coefficientForm)continue;
         // Enumerate centred reciprocal congruences on free coordinates too.
         // A shift of a fixed coordinate can require a compensating free shift.
@@ -780,13 +794,54 @@ export function candidatesMulti(ops: SOp[], Qtext: string[]): { sgNumber: number
           }
           return out.filter(mp=>centred.every(c=>c.reduce((v,x,j)=>v.add(x.mul(mp[j])),Z).isInt()));
         });
-        let combined:QMat[]=[[]];for(const row of choices)combined=combined.flatMap(v=>row.map(mp=>[...v,mp]));
-        for(const mp of combined){
-          const q1=q0.map((row,i)=>row.map((x,j)=>({...x,c:mp[i][j].isZero()?x.c:x.c.add(mp[i][j])}))),form=coefficientForm?conventional(q1,names,system,rotations.map(W=>({W,w:[]}))):null;
-          if(preferredOnly!==Boolean(form))continue;
-          const text=form??q1.map(row=>formatQ(row,names));
-          prepared.push({basis,q0,form:text,conventional:form!==null,mp,cost:multiCost(text,0)});
+        // Coefficients are fixed here. All remaining conventional() tests on
+        // constants are row-local (including the shared seed's zero constants).
+        // Test each row against zero constants elsewhere, preserving that exact
+        // predicate and caching its formatting instead of repeating the product.
+        const variants=choices.map((row,i)=>row.map(mp=>{
+          const shifted=q0[i].map((x,j)=>({...x,c:mp[j].isZero()?x.c:x.c.add(mp[j])}));
+          const form=coefficientForm?conventional(coefficientQ.map((r,k)=>k===i?shifted:r),names,system,rotationOps):null;
+          const text=preferredOnly?form?.[i]:formatQ(shifted,names);
+          return {mp,text,preferred:form!==null,cost:text===undefined?0:multiCost([...Array(i).fill(''),text],0)};
+        }).filter(x=>x.text!==undefined));
+        if(variants.some(row=>!row.length))continue;
+        const rowMin=variants.map(row=>Math.min(...row.map(x=>x.cost))),remaining=Array(d+1).fill(0);
+        for(let i=d-1;i>=0;i--)remaining[i]=remaining[i+1]+rowMin[i];
+        // A fallback needs at least one row that fails conventional(). Force
+        // each possible failing row in turn; other rows attain independent minima.
+        // This is its exact eligible minimum, without a Cartesian enumeration.
+        let minimum:number|undefined=preferredOnly?remaining[0]:undefined;
+        if(!preferredOnly)for(const [i,row] of variants.entries())for(const v of row)if(!v.preferred){
+          const cost=remaining[0]-rowMin[i]+v.cost;
+          if(minimum===undefined||cost<minimum)minimum=cost;
         }
+        if(minimum===undefined)continue;
+        families.push({basis,q0,variants,remaining,minimum});
+      }
+      // The family key contains every exact input used to build these rows.
+      // Retain all eligible families in their original order, independently of
+      // the current bound; applying a later bound reuses work without changing
+      // the candidate minimum or stable traversal order. Keep memory local.
+      if(familyCache.size>=4)familyCache.delete(familyCache.keys().next().value!);
+      familyCache.set(familyKey,families);
+      }
+      const minimumCost=minimumOnly?families.reduce<number|undefined>((v,f)=>v===undefined||f.minimum<v?f.minimum:v,undefined):undefined;
+      const limit=minimumOnly?minimumCost:costLimit;
+      for(const {basis,q0,variants,remaining,minimum} of families){
+        if(limit!==undefined&&minimum>limit)continue;
+        // multiCost is the sum of these nonnegative row costs. An established
+        // valid winner can only improve: a branch above its cost cannot reach
+        // the ranked minimum. Keep equality and the original traversal/tie order;
+        // include the bound and search mode in the cache key for later searches.
+        const visit=(i:number,mp:QMat,text:string[],cost:number,preferred:boolean)=>{
+          if(limit!==undefined&&cost+remaining[i]>limit)return;
+          if(i===d){
+            if(preferredOnly===preferred)prepared!.push({basis,q0,form:text,conventional:preferred,mp,cost});
+            return;
+          }
+          for(const row of variants[i])visit(i+1,[...mp,row.mp],[...text,row.text!],cost+row.cost,preferred&&row.preferred);
+        };
+        visit(0,[],[],0,true);
       }
       // The bIndex contribution is constant across this array, so this exact
       // score/prefix order is reusable for every affine lift and later record.
@@ -819,6 +874,8 @@ export function candidatesMulti(ops: SOp[], Qtext: string[]): { sgNumber: number
         winning=level;winningPrefix=prefix;list.push({symbol,bIndex,P,p,E,M,basis,conventional:preferred,operators,qActual:q0.map((row,i)=>formatQ(row.map((x,j)=>({...x,c:x.c.add(mp[i][j])})),names))});
       }
     }
+    if(minimumOnly&&list.length)break settingSearch;
+  }
   }
   if(list.length)break;
   }

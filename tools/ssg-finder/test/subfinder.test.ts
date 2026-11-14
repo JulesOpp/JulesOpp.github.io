@@ -156,9 +156,8 @@ it("names the hand P6/mmm d=2 classes invariantly in a random setting", () => {
 
 const CUBIC_DATA = join(__dirname, "..", "local", "data");
 describe.skipIf(!existsSync(join(CUBIC_DATA, "sg230.json")))("cubic d=3 timing (local)", () => {
-  // Measured 285.040 s for 33 classes before Task 9; keep the 120 s target.
-  // Naming optimisation belongs to another task.
-  it.skip("names the largest stored cubic d=3 parent within 120 s", () => {
+  // Exact-output naming optimisation: 53.171 s for all 33 classes of 225.3.209.1.
+  it("names the largest stored cubic d=3 parent within 120 s", () => {
     const parents: GroupRecord[] = [];
     for (const file of readdirSync(CUBIC_DATA).filter(f=>/^sg\d+\.json$/.test(f) && Number(f.slice(2,5)) >= 195)) {
       const groups = JSON.parse(readFileSync(join(CUBIC_DATA,file),"utf8")).groups as Record<string,GroupRecord>;
