@@ -7,8 +7,7 @@
 
 import { Q } from "../rational";
 import { buildOps, type GroupRecord } from "../ssg";
-import type { SubRow } from "../subfinder";
-import type { Standardised } from "../standardise";
+import type { AffineMap, SubRow } from "../subfinder";
 
 /** sessionStorage key of a subgroup record on its way from the subgroup page to the finder. */
 export const SEND_KEY = "ssgsub:send";
@@ -31,15 +30,15 @@ function linText(coef: Q[], vars: string[], c0: Q): string {
  * The map from the parent's axes to the type's setting, as new coordinates in terms of the
  * old: x_std = P x + p and t' = m·x + η t + p4, written "(-y, x-y, -z-1/4; -t)".
  */
-export function affineText(t: Pick<Standardised, "P" | "p" | "E" | "M" | "p4">): string {
+export function affineText(t: AffineMap): string {
   const xyz = ["x", "y", "z"];
   const ext = t.P.map((row, i) => linText(row.map((x) => Q.parse(x)), xyz, Q.parse(t.p[i])));
-  const int = t.M.map((row, i) => linText([...row.map(Q.parse), ...t.E[i].map(x=>Q.of(x))], [...xyz, ...["t", "u", "v"].slice(0, t.E.length)], Q.parse(t.p4[i]))).join(", ");
+  const int = t.M.map((row, i) => linText([...row.map(Q.parse), ...t.E[i].map(x=>typeof x === "string"?Q.parse(x):Q.of(x))], [...xyz, ...["t", "u", "v"].slice(0, t.E.length)], Q.parse(t.p4[i]))).join(", ");
   return `(${ext.join(", ")}; ${int})`;
 }
 
 /** Display an equivalent map with origin shifts in [0, 1): integer shifts lie in Σ_B = Z^n. */
-export function displayMap(t: Pick<Standardised, "P" | "p" | "E" | "M" | "p4">): typeof t {
+export function displayMap(t: AffineMap): typeof t {
   return { ...t, p: t.p.map((x) => Q.parse(x).mod1().toString()), p4: t.p4.map((x) => Q.parse(x).mod1().toString()) };
 }
 
@@ -52,8 +51,16 @@ export function prepareSend(parent: GroupRecord, row: SubRow, sg: number): { ok:
   }
 }
 
-/** The subgroup as a finder record: the parent's lattice, q and centrings, the subgroup's operators (parent axes). */
+/** Finder record: parent axes at k=1, primitive subgroup basis at k>1. */
 export function subgroupRecord(parent: GroupRecord, row: SubRow, parentSgNumber: number): GroupRecord {
+  if (row.rebased) {
+    const rec = {...row.rebased, sym:`${row.type?.symbol.full ?? "unidentified subgroup"} < ${parent.sym}`};
+    // Primitive rebased axes may differ from the parent's crystal system.
+    // When naming failed, let the finder infer the axes from the operations.
+    if(row.type) rec.sgNumber=row.type.sgNumber;
+    return rec;
+  }
+  if(row.kIndex>1) throw new Error("The subgroup lattice could not be rebased; finder handoff is unavailable.");
   const name = row.inParentAxes ?? (row.type ? row.type.symbol.full : "subgroup");
   const rec: GroupRecord = {
     sym: `${name} < ${parent.sym}`,

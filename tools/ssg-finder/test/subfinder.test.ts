@@ -3,7 +3,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { Q } from "../src/rational";
 import { buildOps, type GroupRecord } from "../src/ssg";
-import { subgroupRecord } from "../src/ui/subflow";
+import { affineText, prepareSend, subgroupRecord } from "../src/ui/subflow";
 import { loadMoyo } from "../src/moyo";
 import * as subfinder from "../src/subfinder";
 import * as standardiser from "../src/standardise";
@@ -54,9 +54,8 @@ describe("runSubgroups (P-3c1(0,0,g)000)", () => {
   it("monoclinic subgroup drops out of the parent axes", () => {
     expect(all.rows.find((x) => x.sgNumber === 15)!.inParentAxes).toBeNull();
   });
-  it("refuses k-index != 1", () => {
-    expect(() => runSubgroups(P3C1, { kIndex: 2 })).toThrow(SubgroupError);
-    expect(() => runSubgroups(P3C1, { kIndex: 2 })).toThrow("only k-index 1 is supported for now");
+  it("refuses values beyond the dimensional cap", () => {
+    expect(() => runSubgroups(P3C1, { kIndex: 4 })).toThrow(SubgroupError);
   });
 });
 
@@ -172,4 +171,47 @@ describe.skipIf(!existsSync(join(CUBIC_DATA, "sg230.json")))("cubic d=3 timing (
     expect(out.warnings).toEqual([]);
     expect((performance.now()-start)/1000).toBeLessThanOrEqual(120);
   }, 600_000);
+});
+
+const P1: GroupRecord = {sym:"hand P1",cls:"triclinic",d:1,q:["a,b,g"],params:["a","b","g"],cen:[],gen:[]};
+it("includes smaller k by default and filters exact k and lattice kinds",()=>{
+ const all=runSubgroups(P1,{kIndex:2});
+ expect(all.rows).toHaveLength(16);
+ expect(runSubgroups(P1,{kIndex:2,onlyK:true}).rows).toHaveLength(15);
+ expect(runSubgroups(P1,{kIndex:3,onlyK:true}).rows).toHaveLength(40);
+ expect(all.rows.every(r=>r.type!==null)).toBe(true);
+ expect(all.rows.filter(r=>r.kIndex===2).every(r=>r.rebased?.cen.length===0)).toBe(true);
+ expect(all.rows.every(r=>r.lattice?.basis)).toBe(true);
+ const physical=runSubgroups(P1,{kIndex:2,onlyK:true,kinds:["3d"]});
+ expect(physical.rows.length).toBeGreaterThan(0);
+ expect(physical.rows.every(r=>r.lattice?.kind==="3d")).toBe(true);
+});
+it("retains every unidentified class after returned failures or thrown naming errors",()=>{
+ runSubgroups(P1,{kIndex:1}); // cache the parent before simulating class failures
+ const spy=vi.spyOn(standardiser,"standardise");
+ let calls=0;
+ spy.mockImplementation(()=>{if(calls++%2)throw new Error("bounded search failure");return {ok:false,reason:"no setting"};});
+ try{
+  const out=runSubgroups(P1,{kIndex:2,onlyK:true,pointGroup:"321",centring:"F",kinds:["mixed"]});
+  expect(out.rows).toHaveLength(16);
+  expect(out.rows.every(r=>r.type===null)).toBe(true);
+  expect(out.warnings).toHaveLength(16);
+  expect(out.warnings.every(w=>w.includes("unidentified"))).toBe(true);
+ }finally{spy.mockRestore();}
+});
+it("enforces d=2 and d=3 caps",()=>{
+ expect(()=>runSubgroups({...P1,d:2,q:["a,b,g","a2,b2,g2"]},{kIndex:3})).toThrow("d=2 supports k-index 1 to 2");
+ expect(()=>runSubgroups({...P1,d:3,q:["a,b,g","a2,b2,g2","a3,b3,g3"]},{kIndex:2})).toThrow("d=3 supports k-index 1 to 1");
+});
+
+it("composes a fractional internal rebase and sends the subgroup lattice to the finder",()=>{
+ const out=runSubgroups(P1,{kIndex:2,onlyK:true});
+ const internal=out.rows.find(r=>r.lattice?.basis==="(a, b, c; 2t)")!;
+ expect(internal).toBeDefined();
+ expect(affineText(internal.transformation!)).toBe("(x, y, z; 1/2t)");
+ const record=subgroupRecord(P1,internal,out.parentSgNumber);
+ expect(record.q).toEqual(["1/2a,1/2b,1/2g"]);
+ expect(record.cen).toEqual([]);
+ expect(buildOps(record)).toHaveLength(1);
+ expect(prepareSend(P1,{...internal,rebased:undefined,type:null},out.parentSgNumber).ok).toBe(false);
 });

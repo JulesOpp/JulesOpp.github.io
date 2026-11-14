@@ -411,4 +411,27 @@ For subsequent page integration, cap k at 3 for d=1, 2 for d=2, and 1 for d=3.
 The oracle retains k=4 for local validation and performance work. Higher-d
 k=3 extrapolations alone do not justify enabling that option. Full higher-d
 fixture sweeps remain separate from sample validation and require their own
-runtime decision. These limits do not change the current page implementation.
+runtime decision. The page enforces these caps. d=2 k=2 remains marked "sample-validated" until
+all 3338 d=2 parents pass the detached local fixture sweep with none=0 and
+several=0. The full sweep writes only under local/ and reports the first five
+failures as (label, zero-based row, sigma).
+
+### 6.1 Browser implementation
+
+`src/sublattices.ts` enumerates exact row lower HNFs. `src/ksubgroups.ts`
+enumerates complements and G-conjugacy classes at k=1,2,3, using rational
+BigInt arithmetic for lattice coordinates, closure, invariance and conjugation.
+For the prime k>1 values offered by the page, a subgroup is maximal exactly
+when its t-index is 1. k=1 preserves `tSubgroups` and its maximality test.
+
+`rebase` gives a primitive subgroup record, q family, and exact coordinate map.
+`SubRow.type` names that primitive record; `SubRow.transformation` composes the
+naming map with the rebase, including rational internal coefficients.
+The finder handoff uses the primitive record for k>1 and parent axes for k=1.
+A failed rebase disables handoff rather than substituting the parent's lattice.
+
+`onlyK=false` includes k'≤kIndex, matching CELLSUB's full-list option;
+`onlyK=true` selects the chosen k. Lattice kinds can be filtered separately.
+Unidentified rows bypass every filter, display "unidentified", and retain
+an explanatory warning. Returned naming failures and exceptions are caught
+per class, so neither can remove later classes or abort the page.

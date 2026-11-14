@@ -127,7 +127,7 @@ function receiveSubgroup(): boolean {
   rec = sent;
   elPaste.value = "";
   elPasteStatus.className = "ssgf-msg";
-  elPasteStatus.textContent = "Loaded a subgroup from the subgroup page (operators in the parent group's axes). Paste a BYU page to replace it.";
+  elPasteStatus.textContent = "Loaded a subgroup from the subgroup page in its supplied lattice basis. Paste a BYU page to replace it.";
   showGroup(rec);
   return true;
 }

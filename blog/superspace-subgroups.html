@@ -117,19 +117,19 @@
 <main id="main">
   <div class="wrap">
     <article class="prose">
-    <p class="wip-note" role="note" style="border: 1px solid var(--accent); border-left-width: 4px; border-radius: 4px; padding: 0.5rem 0.8rem; background: var(--bg-soft); font-weight: 600;">Superspace Subgroups (in progress)</p>
     <h1>Superspace Subgroups</h1>
     <p class="date"><time datetime="2026-11-10">November 10, 2026</time></p>
-    <p>This page lists the subgroups of a (3+d)D superspace group that keep its
-    full superspace lattice: the subgroups of k-index 1, also called
-    translationengleiche subgroups. It follows the layout of CELLSUB on the
+    <p>This page lists the subgroups of a (3+d)D superspace group, including
+    translationengleiche subgroups and subgroups with a larger translation cell. It follows the layout of CELLSUB on the
     <a href="https://www.cryst.ehu.es/">Bilbao Crystallographic Server</a>, one
     row per conjugacy class, and names each subgroup type algorithmically.
     It is a companion to the <a href="superspace-group-finder.html">Superspace
     Group Finder</a>: any row can be sent there to find the 3D space groups of
     its commensurate sections.</p>
-    <p><b>Scope for now:</b> d = 1, 2, 3 and k-index 1 only.
-    Subgroups that lose lattice translations (k-index &gt; 1) are not yet handled.</p>
+    <p><b>Scope:</b> d = 1 with k ≤ 3; d = 2 with k ≤ 2
+    (<span id="ssgs-d2-validation">sample-validated</span>); d = 3 with k = 1.
+    Lattices can be 3D supercells, internal or mixed. The full d = 2, k = 2
+    oracle validation is pending; type naming uses a bounded setting search.</p>
     <p><b>How to use.</b> The superspace-group tables belong to the ISO(3+d)D
     project at BYU and are not distributed with this page. As on the finder,
     open the group's BYU page, select everything (Cmd-A or Ctrl-A), copy it and
@@ -163,15 +163,16 @@
             <label for="ssgs-k">k-index</label>
             <select id="ssgs-k" aria-describedby="ssgs-k-note">
               <option value="1" selected>1</option>
-              <option value="2" disabled>2</option>
-              <option value="3" disabled>3</option>
-              <option value="4" disabled>4</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
             </select>
-            <span class="note" id="ssgs-k-note">Only k-index 1 for now.</span>
+            <span class="note" id="ssgs-k-note">Paste a group to set the dimension’s maximum k-index.</span>
           </div>
           <p class="note">Optional filters (applied to the listed classes; rows whose type could not be identified are always shown):</p>
           <div class="ssgs-filters">
-            <div class="row"><input type="checkbox" id="ssgs-onlyk" checked><label for="ssgs-onlyk">Only this k-index</label></div>
+            <div class="row"><label for="ssgs-kind">Lattice</label>
+              <select id="ssgs-kind"><option value="">all kinds</option><option value="3d">3D supercell</option><option value="internal">internal</option><option value="mixed">mixed</option></select></div>
+            <div class="row"><input type="checkbox" id="ssgs-onlyk"><label for="ssgs-onlyk">Only this k-index</label></div>
             <div class="row"><label for="ssgs-pg">Point group</label>
               <select id="ssgs-pg"><option value="">any</option></select></div>
             <div class="row"><label for="ssgs-sys">Crystal system</label>
@@ -208,9 +209,8 @@
     <article class="prose">
     <h2>Reading the table</h2>
     <ul>
-      <li><b>Index</b> is the index of the subgroup H in the parent G. With
-      k-index 1 it equals the t-index, the index of the point group of H in that
-      of G.</li>
+      <li><b>Index</b> is the index of the subgroup H in the parent G. It equals t-index × k-index, where t is the point-group index
+      and k is the translation-lattice index.</li>
       <li><b>Point group</b> and <b>Basic SG</b> are those of H's basic space
       group, in the type's setting (number in brackets as in International
       Tables A).</li>
@@ -221,7 +221,12 @@
       <li><b>q</b> lists the subgroup's own modulation vectors in that setting,
       members of the type's q family (for example (0,0,g) in a P-1(a,b,g) type).</li>
       <li><b>Conjugates</b> is the number of subgroups in the conjugacy class;
-      <b>Maximal</b> says whether no other k-index-1 subgroup lies between H and G.</li>
+      <b>Maximal</b> says whether no subgroup lies strictly between H and G. For the prime k values
+      offered here, a k &gt; 1 class is maximal exactly when its t-index is 1.</li>
+      <li><b>Lattice</b> shows a primitive basis of Σ′ in the parent’s coordinates.
+      A 3D supercell preserves the internal intersection, an internal lattice preserves
+      the external projection, and a mixed lattice changes both. At k = 1 the
+      lattice is unchanged.</li>
       <li><b>Transformation</b> gives the external and internal coordinates of the
       type's setting in terms of the parent's coordinates. Press the index to
       see the generators of H in the parent's axes, its symbol in those axes
@@ -235,8 +240,14 @@
     group is isomorphic to the point group K of the basic space group. A
     subgroup of G with the same superspace lattice is then the full preimage of
     a subgroup P of K, and two such subgroups are conjugate in G exactly when
-    their P are conjugate in K. So the rows are the conjugacy classes of
+    their P are conjugate in K. For k = 1 the rows are therefore conjugacy classes of
     subgroups of K, and the modulation module is unchanged.</p>
+    <p>For k &gt; 1, the program enumerates index-k lower Hermite normal forms
+    in the full parent lattice, keeps the point-group-invariant lattices, and closes
+    every generator lift modulo each lattice. Conjugation by parent operations and
+    translations groups these complements into classes. Each subgroup is rebased
+    onto its own primitive lattice before naming; its q vectors and the transformation
+    shown in the table include that rebase. The finder receives this primitive subgroup.</p>
     <p>Each subgroup is identified from its operations: the basic space group
     by <a href="https://github.com/spglib/moyo">moyo</a> (compiled to
     WebAssembly), then a search over settings of that space group for the one
@@ -245,13 +256,15 @@
     (Table 9.8.3) and the ISO(3+d)D axis and lattice conventions.
     Among the equivalent names that remain, a fixed choice rule picks one.
     The type names are worked out by this algorithm, not looked up; the rule
-    uses the tool’s own canonical setting for d = 2, 3. If a subgroup cannot be identified, its row says so and a
-    warning explains why.</p>
+    uses the tool’s own canonical setting for d = 2, 3. If a subgroup cannot be identified, its row says <i>unidentified</i> and a
+    warning explains why. These rows remain visible under every filter. The Python
+    oracle is validated locally against ISO(3+d)D; no catalogue data are shipped.</p>
 
     <h2>Limitations</h2>
     <ul>
-      <li>d = 1, 2, 3 and k-index 1 only. CELLSUB's general subgroups (supercells and
-      changes of the internal lattice) are not yet handled. Cubic d = 3 parents can take several minutes; progress appears as classes are named, and Cancel stops the worker.</li>
+      <li>The caps are k ≤ 3 for d = 1, k ≤ 2 for d = 2 (sample-validated),
+      and k = 1 for d = 3. Internal-basis and setting searches are bounded;
+      an unidentified class is retained and is not evidence of inequivalence. Cubic d = 3 parents can take several minutes; progress appears as classes are named, and Cancel stops the worker.</li>
       <li>Magnetic superspace groups are not handled.</li>
       <li>The symbol in the parent's axes is only given when the subgroup keeps
       the parent's crystal system.</li>

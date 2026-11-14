@@ -35,7 +35,7 @@ await build({
   ...common,
   entryPoints: [join(here, "src", "ui", "subgroups.ts")],
   outfile: join(out, "ssgsub.js"),
-  banner: { js: `/* Superspace subgroups (k-index 1). ${moyoNote} */` },
+  banner: { js: `/* Superspace subgroups. ${moyoNote} */` },
 });
 
 await build({

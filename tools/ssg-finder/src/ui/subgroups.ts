@@ -1,4 +1,4 @@
-// Superspace subgroups (k-index 1): page script (vanilla DOM). Bundled by build.mjs into
+// Superspace subgroups: page script (vanilla DOM). Bundled by build.mjs into
 // assets/blog/ssg-finder/ssgsub.js and loaded by blog/superspace-subgroups.html.
 //
 // Paste mode only (decision D1): the page ships no BYU data and never fetches BYU. Subgroup
@@ -8,7 +8,7 @@
 import { loadMoyo } from "../moyo";
 import { parseByuPage, PasteError } from "../paste";
 import type { GroupRecord } from "../ssg";
-import { keep, subgroupSteps, SubgroupError, type SubFilter, type SubRow, type SubResult } from "../subfinder";
+import { maxK, keep, subgroupSteps, SubgroupError, type SubFilter, type SubRow, type SubResult } from "../subfinder";
 import type { SubRequest, SubResponse } from "./subworker";
 import type { CrystalSystem } from "../symbol";
 import { LABEL_RE, esc, symbolHtml } from "./flow";
@@ -31,6 +31,8 @@ const elPaste = $<HTMLTextAreaElement>("ssgs-paste");
 const elPasteStatus = $("ssgs-paste-status");
 const elForm = $<HTMLFormElement>("ssgs-form");
 const elK = $<HTMLSelectElement>("ssgs-k");
+const elKind = $<HTMLSelectElement>("ssgs-kind");
+const elKNote = $("ssgs-k-note");
 const elOnlyK = $<HTMLInputElement>("ssgs-onlyk");
 const elPg = $<HTMLSelectElement>("ssgs-pg");
 const elSys = $<HTMLSelectElement>("ssgs-sys");
@@ -60,7 +62,7 @@ function stopRun(): void {
   elCancel.hidden = true;
 }
 const expanded = new Set<string>();
-const rowKey = (row: SubRow) => JSON.stringify([...row.generators].sort());
+const rowKey = (row: SubRow) => JSON.stringify([row.kIndex,row.lattice?.basis,[...row.generators].sort()]);
 
 // ------------------------------------------------------------------ step 1: label + paste
 
@@ -95,6 +97,10 @@ function onPaste(): void {
   try {
     const rec = parseByuPage(text);
     pasted = rec;
+    const cap = maxK(rec.d);
+    for(const option of Array.from(elK.options)) option.disabled=Number(option.value)>cap;
+    if(Number(elK.value)>cap)elK.value=String(cap);
+    elKNote.textContent=`d = ${rec.d}: k ≤ ${cap}${rec.d===2?" (sample-validated)":""}. Uncheck “Only this k-index” to include smaller k.`;
     if (rec.label && elLabel.value.trim() !== rec.label) {
       elLabel.value = rec.label;
       syncLabel();
@@ -220,7 +226,13 @@ elForm.addEventListener("submit", (e) => {
   e.preventDefault();
   if (!elRun.disabled) void run();
 });
-for (const el of [elOnlyK, elPg, elSys, elCen]) el.addEventListener("change", () => state && render());
+for (const el of [elOnlyK, elKind, elPg, elSys, elCen]) el.addEventListener("change", () => state && render());
+
+elK.addEventListener("change",()=>{
+  stopRun(); state=null; expanded.clear(); elResults.innerHTML="";
+  elRun.disabled=!(pasted&&supported(pasted));
+  elRunStatus.textContent="Press List subgroups to compute this k-index range.";
+});
 
 function fillPointGroups(rows: SubRow[]): void {
   const old = elPg.value;
@@ -231,7 +243,8 @@ function fillPointGroups(rows: SubRow[]): void {
 
 function filter(): SubFilter {
   return {
-    kIndex: 1,
+    kIndex: Number(elK.value),
+    kinds: elKind.value ? [elKind.value as "3d" | "internal" | "mixed"] : undefined,
     onlyK: elOnlyK.checked,
     pointGroup: elPg.value || undefined,
     system: (elSys.value || undefined) as CrystalSystem | undefined,
@@ -244,7 +257,7 @@ function filter(): SubFilter {
 const sym = (s: string) => `<span class="sym">${symbolHtml(s)}</span>`;
 
 function typeCell(r: SubRow): string {
-  if (!r.type) return `<span class="err">not identified</span>`;
+  if (!r.type) return `<span class="err">unidentified</span>`;
   let h = sym(r.type.symbol.full);
   if (r.type.alternates.length)
     h += `<div class="alt">≡ ${r.type.alternates.map(sym).join(" ≡ ")}</div>`;
@@ -260,12 +273,12 @@ function render(): void {
   if (s.warnings.length)
     h += `<div class="ssgf-warn" role="alert"><strong>Warnings</strong><ul>${s.warnings.map((w) => `<li>${esc(w)}</li>`).join("")}</ul></div>`;
   const time = s.ms < 1000 ? Math.round(s.ms) + " ms" : (s.ms / 1000).toFixed(1) + " s";
-  h += `<p class="ssgf-head">Subgroups of ${s.parent.label ? esc(s.parent.label) + " " : ""}${sym(s.name)} with k-index 1: ` +
+  h += `<p class="ssgf-head">Subgroups of ${s.parent.label ? esc(s.parent.label) + " " : ""}${sym(s.name)} with k-index ≤ ${elK.value}: ` +
     `<strong>${rows.length}</strong> of ${s.rows.length} conjugacy class${s.rows.length === 1 ? "" : "es"} shown (${time}).</p>`;
-  h += `<div class="table-scroll ssgs-table"><table><caption class="sr-only">Subgroup classes of k-index 1</caption><thead><tr>` +
+  h += `<div class="table-scroll ssgs-table"><table><caption class="sr-only">Subgroup conjugacy classes</caption><thead><tr>` +
     `<th scope="col">Index</th><th scope="col">t-index</th><th scope="col">k-index</th><th scope="col">Point group</th>` +
     `<th scope="col">Basic SG</th><th scope="col">Superspace group (type)</th><th scope="col">q</th>` +
-    `<th scope="col">Conjugates</th><th scope="col">Maximal</th>` +
+    `<th scope="col">Lattice</th><th scope="col">Conjugates</th><th scope="col">Maximal</th>` +
     `<th scope="col"><abbr title="New external and internal coordinates of the type's setting in terms of the parent's coordinates">Transformation</abbr></th>` +
     `</tr></thead><tbody>`;
   rows.forEach((r, i) => {
@@ -279,11 +292,12 @@ function render(): void {
       `<td>${r.type ? `${sym(r.sgSymbol)} <span class="muted">(${r.sgNumber})</span>` : "?"}</td>` +
       `<td class="ty">${typeCell(r)}</td>` +
       `<td class="mono">${r.type ? "(" + esc(r.type.qActual.join(")(")) + ")" : "?"}</td>` +
+      `<td>${r.lattice ? `${esc(r.kIndex === 1 ? "unchanged" : r.lattice.kind === "3d" ? "3D supercell" : r.lattice.kind)}<div class="mono">${esc(r.lattice.basis)}</div>` : "?"}</td>` +
       `<td>${r.classSize}</td><td>${r.maximal ? "yes" : "no"}</td>` +
-      `<td class="mono">${r.type ? esc(affineText(displayMap(r.type))) : "?"}</td></tr>`;
-    h += `<tr id="${did}" class="ssgs-det"${open ? "" : " hidden"}><td colspan="10"><div class="ssgs-detbox">` +
-      `<p><span class="muted">In the parent's axes:</span> ${r.inParentAxes ? sym(r.inParentAxes) : `<span class="muted">no symbol (different crystal system)</span>`}</p>` +
-      `<p><span class="muted">Generators (parent axes, besides the lattice${s.parent.cen.length ? " and centring" : ""} translations):</span></p>` +
+      `<td class="mono">${r.type ? esc(affineText(displayMap(r.transformation ?? r.type))) : "?"}</td></tr>`;
+    h += `<tr id="${did}" class="ssgs-det"${open ? "" : " hidden"}><td colspan="11"><div class="ssgs-detbox">` +
+      `<p><span class="muted">In the parent's axes:</span> ${r.inParentAxes ? sym(r.inParentAxes) : `<span class="muted">no symbol in the parent’s axes</span>`}</p>` +
+      `<p><span class="muted">Operators generating H (parent axes, besides the displayed subgroup lattice translations):</span></p>` +
       `<pre>${r.generators.length ? esc(r.generators.join("\n")) : "none (only translations)"}</pre>` +
       `<p><a href="superspace-group-finder.html" data-send="${s.rows.indexOf(r)}">Send to finder →</a> ` +
       `<span class="muted">opens the Superspace Group Finder with this subgroup's operators</span></p>` +
