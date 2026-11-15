@@ -100,7 +100,7 @@ function onPaste(): void {
     const cap = maxK(rec.d);
     for(const option of Array.from(elK.options)) option.disabled=Number(option.value)>cap;
     if(Number(elK.value)>cap)elK.value=String(cap);
-    elKNote.textContent=`d = ${rec.d}: k ≤ ${cap}${rec.d===2?" (sample-validated)":""}. Uncheck “Only this k-index” to include smaller k.`;
+    elKNote.textContent=`d = ${rec.d}: k ≤ ${cap}. Uncheck “Only this k-index” to include smaller k.`;
     if (rec.label && elLabel.value.trim() !== rec.label) {
       elLabel.value = rec.label;
       syncLabel();
