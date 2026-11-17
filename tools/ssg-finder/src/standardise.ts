@@ -210,7 +210,7 @@ export function transformOps(ops: SOp[], P: QMat, p: QVec, E: number[][], M: QMa
  * y=P x+p, s=U t; s'=B s+mp y-mp p, so the composed internal
  * origin is exactly zero. This is an automorphism of Z^(3+d): no new lattice
  * closure is needed. Integer matrix products use BigInt throughout. */
-function internalTransformer(ops:SOp[],p:QVec,resultCache?:Map<string,Map<string,SOp[]>>):(B:number[][],mp:QMat)=>SOp[] {
+function internalTransformer(ops:SOp[],p:QVec,resultCache?:Map<string,Map<string,SOp[]>>,groupCache?:Map<string,SOp[]>):(B:number[][],mp:QMat)=>SOp[] {
   // Cache only exact operation sets and the full internal affine change.
   // Eight groups with 256 entries each bound memory within one naming call.
   const baseKey=resultCache?ops.map(opKey).join(' '):'';
@@ -221,27 +221,87 @@ function internalTransformer(ops:SOp[],p:QVec,resultCache?:Map<string,Map<string
   }
   const d=ops[0].W.length-3;
   const mul=(A:IMat,B:IMat):IMat=>A.map(row=>B[0].map((_,j)=>row.reduce((s,x,k)=>s+x*B[k][j],0n)));
-  const data=ops.map(o=>({o,R:o.W.slice(0,3).map(r=>r.slice(0,3).map(BigInt)),F:o.W.slice(3).map(r=>r.slice(0,3).map(BigInt)),D:o.W.slice(3).map(r=>r.slice(3).map(BigInt))}));
-  const inverses=new Map<string,IMat>();
+  // Centring copies share W: build each distinct linear part (and its key) once per call.
+  const linear=new Map<string,{W:number[][];R:IMat;F:IMat;D:IMat;r:number[][];f:number[][];dd:number[][]}>();
+  const data=ops.map(o=>{const k=mkey(o.W);let g=linear.get(k);if(!g){g={W:o.W,R:o.W.slice(0,3).map(r=>r.slice(0,3).map(BigInt)),F:o.W.slice(3).map(r=>r.slice(0,3).map(BigInt)),D:o.W.slice(3).map(r=>r.slice(3).map(BigInt)),r:o.W.slice(0,3).map(r=>r.slice(0,3)),f:o.W.slice(3).map(r=>r.slice(0,3)),dd:o.W.slice(3).map(r=>r.slice(3))};linear.set(k,g);}return {o,g};});
+  const groups=[...linear.values()];
+  // Exact double arithmetic when every factor is at most 2^12 (all partial sums < 2^53).
+  const small=(x:number)=>Math.abs(x)<=4096,linearSmall=groups.every(g=>g.W.every(r=>r.every(small)));
+  const nmul=(A:number[][],B:number[][]):number[][]=>A.map(row=>B[0].map((_,j)=>row.reduce((s,x,k)=>s+x*B[k][j],0)));
+  // The change is an automorphism of Z^(3+d), so the image group (one entry per
+  // coset mod Z^(3+d), exactly the sorted result) is fixed by generator images.
+  const gens=groupCache?generatorsOf(ops):null;
+  const inverses=basisInverses;
   return (basis,mp)=>{
     const shift=mv(mp,p).map(x=>x.neg()),key=mkey(basis),resultKey=key+'|'+mkey(mp)+'|'+vkey(shift);
     const hit=results.get(resultKey);if(hit)return hit;
-    const B=basis.map(r=>r.map(BigInt));
-    let Bi=inverses.get(key);if(!Bi){Bi=matInv(qmat(basis)).map(r=>r.map(x=>BigInt(toSafeInt(x,'inverse internal basis'))));inverses.set(key,Bi);}
+    const B=basis.map(r=>r.map(BigInt)),Bq=qmat(basis);
+    let Bi=inverses.get(key);if(!Bi){Bi=matInv(Bq).map(r=>r.map(x=>BigInt(toSafeInt(x,'inverse internal basis'))));if(inverses.size>=65536)inverses.clear();inverses.set(key,Bi);}
     const m=mp.map(r=>r.map(x=>BigInt(toSafeInt(x,'internal residue'))));
-    const out=data.map(({o,R,F,D})=>{
+    const bn=basis,bin=Bi!.map(r=>r.map(Number)),mn=m.map(r=>r.map(Number));
+    const exactNumber=linearSmall&&bn.every(r=>r.every(small))&&bin.every(r=>r.every(small))&&mn.every(r=>r.every(small));
+    const image=(sel:{o:SOp;g:{W:number[][];R:IMat;F:IMat;D:IMat;r:number[][];f:number[][];dd:number[][]}}[])=>{
+      const parts=new Map([...new Set(sel.map(x=>x.g))].map(({W:W0,R,F,D,r:rn,f:fn,dd})=>{
+      if(exactNumber){
+        const Dn=nmul(nmul(bn,dd),bin),BF=nmul(bn,fn),mR=nmul(mn,rn),Dm=nmul(Dn,mn);
+        const W=[...W0.slice(0,3).map(r=>[...r.slice(0,3),...Array(d).fill(0)]),...BF.map((r,i)=>[...r.map((x,j)=>x+mR[i][j]-Dm[i][j]),...Dn[i]])];
+        return [W0,{W,Wkey:W.map(r=>r.join(",")).join(";"),id:isIdW(W),c:vsub(shift,mv(Dn.map(r=>r.map(qi)),shift))}] as const;
+      }
       const Dn=mul(mul(B,D),Bi!),BF=mul(B,F),mR=mul(m,R),Dm=mul(Dn,m);
       const Fn=BF.map((r,i)=>r.map((x,j)=>x+mR[i][j]-Dm[i][j]));
-      const W=[...o.W.slice(0,3).map(r=>[...r.slice(0,3),...Array(d).fill(0)]),...Fn.map((r,i)=>[...r,...Dn[i]].map(x=>toSafeInt(x,'operator matrix entry')))];
-      const wI=vsub(vadd(vadd(mv(qmat(basis),o.w.slice(3)),mv(mp,o.w.slice(0,3))),shift),mv(Dn.map(r=>r.map(qi)),shift));
-      return {W,w:[...o.w.slice(0,3),...wI.map(x=>x.mod1())]};
-    });
-    const id=out.find(o=>isIdW(o.W)&&o.w.every(x=>x.isZero()))!;
-    const sorted=[id,...out.filter(o=>o!==id).map(o=>({o,key:opKey(o)})).sort((a,b)=>a.key<b.key?-1:a.key>b.key?1:0).map(x=>x.o)];
+      const W=[...W0.slice(0,3).map(r=>[...r.slice(0,3),...Array(d).fill(0)]),...Fn.map((r,i)=>[...r,...Dn[i]].map(x=>toSafeInt(x,'operator matrix entry')))];
+      return [W0,{W,Wkey:W.map(r=>r.join(",")).join(";"),id:isIdW(W),c:vsub(shift,mv(Dn.map(r=>r.map(qi)),shift))}];
+      }));
+      return sel.map(({o,g})=>{
+      const t=parts.get(g.W)!;
+      const wI=vadd(vadd(mv(Bq,o.w.slice(3)),mv(mp,o.w.slice(0,3))),t.c);
+      const w=[...o.w.slice(0,3),...wI.map(x=>x.mod1())];
+      return {op:{W:t.W.map(r=>[...r]),w},key:t.Wkey+"|"+vkey(w),id:t.id&&w.every(x=>x.isZero())};
+      });
+    };
+    let groupKey:string|undefined;
+    if(gens){
+      groupKey=image(gens.map(i=>data[i])).map(x=>x.key).join(' ');
+      const known=groupCache!.get(groupKey);
+      if(known){if(results.size>=256)results.clear();results.set(resultKey,known);return known;}
+    }
+    const out=image(data);
+    const id=out.find(x=>x.id)!;
+    const rest=out.filter(x=>x!==id).sort((a,b)=>a.key<b.key?-1:a.key>b.key?1:0);
+    const sorted=[id.op,...rest.map(x=>x.op)];
+    transformedOperatorKeys.set(sorted,out.map(x=>x.key).sort().join(' '));
+    if(groupKey!==undefined){if(groupCache!.size>=4096)groupCache!.clear();groupCache!.set(groupKey,sorted);}
     if(results.size>=256)results.clear();results.set(resultKey,sorted);
     return sorted;
   };
 }
+/** Indices of operations generating the listed group modulo Z^n, or null
+ * unless the list is exactly one closed set of coset representatives. */
+const generatorMemo=new Map<string,number[]|null>(),basisInverses=new Map<string,IMat>();
+function generatorsOf(ops:SOp[]):number[]|null {
+  const k=ops.map(opKey).join(' ');let g=generatorMemo.get(k);
+  if(g===undefined){g=generatorIndices(ops);if(generatorMemo.size>=256)generatorMemo.clear();generatorMemo.set(k,g);}
+  return g;
+}
+function generatorIndices(ops:SOp[]):number[]|null {
+  const key=(o:SOp)=>o.W.map(r=>r.join(",")).join(";")+"|"+vkey(o.w);
+  const all=new Map(ops.map(o=>[key(o),o]));if(all.size!==ops.length)return null;
+  const mul=(a:SOp,b:SOp):SOp=>({W:a.W.map(r=>b.W[0].map((_,j)=>r.reduce((s,x,k)=>s+x*b.W[k][j],0))),w:a.W.map((r,i)=>r.reduce((s,x,k)=>x===0?s:s.add(b.w[k].mulInt(x)),a.w[i]).mod1())});
+  const closed=new Map<string,SOp>();const gens:number[]=[];
+  for(const [i,o] of ops.entries()){
+    if(closed.has(key(o)))continue;
+    gens.push(i);
+    const frontier=closed.size?[...closed.values()]:[];
+    if(!closed.size){const id=ops.find(x=>isIdW(x.W)&&x.w.every(v=>v.isZero()));if(!id)return null;closed.set(key(id),id);frontier.push(id);}
+    for(let queue=[...closed.values()];queue.length;){
+      const next:SOp[]=[];
+      for(const a of queue)for(const gi of gens){for(const c of [mul(a,ops[gi]),mul(ops[gi],a)]){const k=key(c);if(!closed.has(k)){if(!all.has(k))return null;closed.set(k,c);next.push(c);}}}
+      queue=next;
+    }
+  }
+  return closed.size===ops.length?gens:null;
+}
+const transformedOperatorKeys=new WeakMap<SOp[],string>();
 
 // ------------------------------------------------------------------ lattices
 
@@ -824,7 +884,14 @@ export function phaseOrderCost(symbol:SsgSymbol):number {
     if(compareQBlocks(form[i],form[j])===0&&!/[^0]/.test(symbol.shifts[i])&&/[^0]/.test(symbol.shifts[j]))cost++;
   return cost;
 }
-const settingCost=(form:string[],bIndex:number,lowerForD?:number)=> {
+const settingCostMemo=new Map<string,number>();
+const settingCost=(form:string[],bIndex:number,lowerForD?:number)=>{
+  if(lowerForD!==undefined)return settingCostRaw(form,bIndex,lowerForD);
+  const k=bIndex+'|'+form.join(';');let v=settingCostMemo.get(k);
+  if(v===undefined){v=settingCostRaw(form,bIndex);if(settingCostMemo.size>=65536)settingCostMemo.clear();settingCostMemo.set(k,v);}
+  return v;
+};
+const settingCostRaw=(form:string[],bIndex:number,lowerForD?:number)=> {
   const components=form.flatMap(row=>row.split(',')).filter(Boolean);
   const compound=components.filter(t=>/[a-z]/i.test(t)&&!/^[-]?[abg][0-9]*(?:[+-][0-9]+(?:\/[0-9]+)?)?$/.test(t)).length;
   const outside=components.filter(t=>!/[a-z]/i.test(t)&&Q.parse(t).cmp(ONE)>=0).length;
@@ -920,7 +987,7 @@ export function candidatesMulti(ops: SOp[], Qtext: string[]): { sgNumber: number
   const settings = system==='cubic' ? [ [[1,0,0],[0,1,0],[0,0,1]] ] : system==='monoclinic' ? [...B_SETTINGS.monoclinic, [[0,0,1],[1,0,0],[0,1,0]]] : B_SETTINGS[system];
   const basisCache=multiPrepared,symbols=new Map<string,SsgSymbol|null>();
   const familyCache=new Map<string,PreparedFamily[]>();
-  const transformedCache=new Map<string,Map<string,SOp[]>>();
+  const transformedCache=new Map<string,Map<string,SOp[]>>(),groupCache=new Map<string,SOp[]>();
   const operatorKeys=new WeakMap<SOp[],string>();
   let winning:number[]|undefined;
   const independentZeroBases=new Map<string,number>();
@@ -1091,11 +1158,11 @@ export function candidatesMulti(ops: SOp[], Qtext: string[]): { sgNumber: number
       // No raw-text prefix pruning: the semantic block order and complexity
       // rank must see all equal-score candidates, with their phases attached.
       const E=imul(basis,U),M=mp.map(row=>toM(row,P));
-      if(applyInternal===undefined){const base=transformOps(ops,P,p,U,Array.from({length:d},()=>[Z,Z,Z]),Array(d).fill(Z));applyInternal=base?internalTransformer(base,p,transformedCache):null;}
+      if(applyInternal===undefined){const base=transformOps(ops,P,p,U,Array.from({length:d},()=>[Z,Z,Z]),Array(d).fill(Z));applyInternal=base?internalTransformer(base,p,transformedCache,groupCache):null;}
       const newOps=applyInternal?applyInternal(basis,mp):transformOps(ops,P,p,E,M,Array(d).fill(Z));
       if(!newOps||newOps.some(o=>isIdW(o.W)&&o.w.slice(3).some(x=>!x.isZero())))continue;
       let operators=operatorKeys.get(newOps);
-      if(operators===undefined){operators=newOps.map(opKey).sort().join(' ');operatorKeys.set(newOps,operators);}
+      if(operators===undefined){operators=transformedOperatorKeys.get(newOps)??newOps.map(opKey).sort().join(' ');operatorKeys.set(newOps,operators);}
       const sk=form.join(';')+'|'+operators;
       if(!symbols.has(sk))symbols.set(sk,ssgSymbolInAxes(newOps,form,system));
       const symbol=symbols.get(sk);
@@ -1188,7 +1255,12 @@ function standardiseMulti(ops:SOp[],q:string[]):Standardised | Fail {
   const basisCost=(E:number[][])=>E.reduce((s,r,i)=>s+r.reduce((v,x,j)=>v+(i!==j&&x!==0?100:0)+(i===j&&x<=0?10:0),0),0);
   const key=(x:MultiCandidate)=>[mkey(x.basis),x.operators,x.qActual.join(';')].join('|');
   const affineKey=(x:MultiCandidate)=>[mkey(x.P),vkey(x.p),mkey(x.E),mkey(x.M)].join('|');
-  c.list.sort((a,b)=>cost(a)-cost(b)||phases(a)-phases(b)||Number(b.conventional)-Number(a.conventional)||settingCost(form(a),a.bIndex)-settingCost(form(b),b.bIndex)||compareQForms(form(a),form(b))||phaseOrderCost(a.symbol)-phaseOrderCost(b.symbol)||cmp(a.symbol.full,b.symbol.full)||basisCost(a.basis)-basisCost(b.basis)||cmp(key(a),key(b))||cmp(affineKey(a),affineKey(b)));
+  // Same comparator on keys computed once per candidate (stable sort, identical order).
+  type Keyed={x:MultiCandidate;f:string[];k:number[];full:string;key?:string;affine?:string};
+  const keyed:Keyed[]=c.list.map(x=>{const f=form(x);return {x,f,full:x.symbol.full,k:[cost(x),phases(x),Number(x.conventional),settingCost(f,x.bIndex),phaseOrderCost(x.symbol),basisCost(x.basis)]};});
+  const keyOf=(a:Keyed)=>a.key??=key(a.x),affineOf=(a:Keyed)=>a.affine??=affineKey(a.x);
+  keyed.sort((a,b)=>a.k[0]-b.k[0]||a.k[1]-b.k[1]||b.k[2]-a.k[2]||a.k[3]-b.k[3]||compareQForms(a.f,b.f)||a.k[4]-b.k[4]||cmp(a.full,b.full)||a.k[5]-b.k[5]||cmp(keyOf(a),keyOf(b))||cmp(affineOf(a),affineOf(b)));
+  c.list=keyed.map(a=>a.x);
   const best=c.list[0];
   return {ok:true,sgNumber:c.sgNumber,symbol:best.symbol,qActual:best.qActual,
     P:best.P.map(r=>r.map(String)),p:best.p.map(String),E:best.E,M:best.M.map(r=>r.map(String)),p4:q.map(()=>"0"),alternates:[]};
