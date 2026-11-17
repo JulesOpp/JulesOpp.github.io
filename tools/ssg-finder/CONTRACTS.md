@@ -1,8 +1,68 @@
 # Shared formats (contract between build_data/, reference/ and src/)
 
+## Accepted page scope — 2026-11-14
+
+The page scope is frozen at **d = 1, k ≤ 3; d = 2, k ≤ 2; d = 3, k = 1**. All supported caps are fully validated. The completed d = 2, k = 2 reference sweep covers all 3,338 parents and 768,066 classes, each identified with exactly one reference type, with zero unidentified or multiply identified classes.
+
+Future work, **not acceptance blockers**:
+
+- Full d = 1, k = 4 validation: approximately 10 hours projected wall time (10.22 h from the saved 30-parent sample); the sample is not full coverage.
+- d = 3, k > 1: the pre-fix, censored k = 2 projection was at least 350 hours (1,273,943 seconds on four workers). It is infeasible for the reference oracle in the present scope; post-fix target timings do not establish a replacement full projection.
+- Higher-dimension k = 3 validation: unmeasured. Earlier extrapolations are not measured validation evidence.
+
+### Naming decision — 2026-11-14
+
+BYU string agreement is **not an acceptance gate**. Exact oracle identification is already verified; spelling differences are measured independently. For d ≥ 2 prefer a unimodular q-basis and invertible parameter change with a single plain parameter (optionally a rational offset) in each free component. Each independent parameter must first occur as a plain component (optionally with rational offset) in its first owning block. Compounds are allowed only in later blocks verified, with exact symbolic coefficients and reciprocal-lattice offsets, as images of earlier blocks under a basic point operation. Every other compound is a defect. Count allowed star-forced compounds separately by crystal system (expected only trigonal, hexagonal, cubic).
+
+Component complexity ranks above the existing setting cost and conventional preference; pruning must retain every potentially winning simple form. Name parameters a, b, g by component. When all q-blocks draw on one shared parameter set (including stars and opposite pairs), use unindexed names. Only distinct parameter sets receive indices, numbered by first appearance; a star and a later independent row use sets 1 and 2, and shared relations retain the same names.
+
+Reduce the complete rational offset vector of every q-block modulo the reciprocal lattice of the centred basic lattice, not componentwise modulo Z³. A reciprocal vector is integral and pairs integrally with every basic centring. Choose the minimum exact L1 absolute size, then lexicographic componentwise absolute sizes; break remaining ties by [0,1) membership, nonnegative signs, and numeric order. Thus a reciprocal offset such as a centred face diagonal vanishes, while a nonreciprocal integer offset remains. Apply the shift to the actual affine map and operations and recompute phases; do not only edit the displayed string. Keep the basic-axis orientation rule. After conventional preference and the unchanged basic-axis setting preference, compare q-blocks lexicographically by component type (free < nonzero rational < 0), with larger rationals first. The fitted rational-setting cost is minimised over q-block permutations, leaving block order to this tie-break; pruning uses an admissible lower bound. Phases travel with their blocks. Among blocks with identical semantic q-order keys, prefer nontrivial phases first by minimising trivial-before-nontrivial inversions, before Unicode fallback. All-zero phase content retains zero inversion cost. Verify that no formerly exact d2 row loses exact agreement. Resolve remaining ties by full symbol, HNF-relative basis complexity/entries, exact operations, actual q and affine map, deterministically.
+
+Allowed q-setting maps include general E ∈ GL(d,Z), integral with determinant ±1. Check exactly that E maps the q-module onto the reference module modulo the centred basic reciprocal lattice, that the printed affine q-family agrees after invertible reparametrisation, and that an exact group map exists. Verify the lattice, symbolic family and every operation in both directions. Keep the plain first-introduction and later star-image rules, basic P determinant ±1, rational origin shifts and allowed centred-reciprocal M offsets. Existing basic-axis and restricted basic-cell-shear conditions still apply. These GL(d,Z) maps are allowed for equivalence checking only; they do not excuse a non-reduced canonical symbol. The canonical writer must choose the reduced q-basis: among valid plain/star candidates minimise total parameter occurrences, then nonzero rational offsets (including offsets on free components), then nontrivial phase letters, before conventional preference and existing setting cost. Candidate generation must reach independent vectors with shared star parameters removed, and pruning must preserve every potential winner. Keep the plain/star, q-order and equal-block phase-order rules.
+
+Prefer a signed q-permutation witness when one exists. Count the remaining accepted maps in **q-basis mixing (unimodular)**, by crystal system, retaining underlying spelling, star and shear diagnostics. A pure-origin-only witness is not required. Record writer reproduction separately; reference spelling is not an acceptance gate. Stop if no allowed exact map is verified, or on any other existing failure. Exhausting a bounded GL witness search does not prove inequivalence. The 19 residual whole-block phase ties remain registered-type phase assignment; do not introduce a new phase-writing rule.
+
+**Acceptance — 2026-11-15:** d2 k=1 naming is accepted over all 3,338 parents. All 129 phase-after-permutation rows have an exact allowed setting map: 120 reproduce the reference phase string and nine retain a different registered generator assignment. The 19 residual phase-order rows are folded into registered-type phase assignment. There are no illegal compounds, no other unexplained cases and no regressions out of formerly exact agreement. Derived row data and examples remain local.
+
+The page explains next to d ≥ 2 symbols: "symbol given in our setting; BYU may list the same group in an axis- or q-permuted setting."
+
+Measure only d2 k=1: all 3,338 parents, at most four workers, approximately one hour. Report exact / pure q-permutation / basic-axis setting / phase-after-permutation / other. Stop on any unverified compound component, an unexpected star-compound crystal system, or any other case without a setting-permutation witness. A basic-cell shear has its own bucket, split by crystal system: its basic transformation must be integral with det ±1, preserve the basic lattice and lattice symbol, map the basic point group onto itself (fixing the monoclinic unique axis), and have an exact group map with origin shifts allowed. A centring-letter change is legitimate in basic-axis setting when an exact group map has a signed basic-axis permutation with det ±1; the centring relabels with the axes. For a lattice-symbol change, stop unless such a signed-permutation witness exists. Non-permutation shears still require the same lattice symbol and all the shear conditions above; stop on det ≠ ±1 or no exact map. Do not merge these into axis permutations. The 430-parent validated d3 k=1 sample is now authorised after the cosmetic d2 rerun, with the same buckets and stop rules, at most four workers. Report a crystal-system-stratified four-worker wall-time projection for all 12,584 d3 parents. Full d3 k=1 naming is conditionally authorised after the complete 430-parent sample: launch detached and resumable with at most four single-thread workers only if no stop occurs and the crystal-system-stratified four-worker projection is at most four hours. Otherwise stop and report. The same exact map, compound, centring and shear stop rules apply throughout. Do not start k=2 class naming; first propose a 2,000-class stratified timing pilot and a projection method for all 768,066 classes. After an offset-normalisation change, restart the d2 k=1 measurement from parent 1; no previous rows count. Recompute the frozen pre-fix spelling for each measured parent and report the count of symbols changed by the reciprocal-offset fix. All measurement data remain under local/; nothing under local/ may be staged or published. No commits before user review, and no merge or push.
+
+**Continuation authorisation — 2026-11-15:** After verifying the d2 phase cohort and retained witnesses under the unimodular rule, resume full d3 k=1 detached and resumably, with the same stops and at most four single-thread workers. After d3 completes, run the authorised 2,000-class stratified d2 k=2 pilot and report buckets, stops and a population-weighted projection for all 768,066 classes. This supersedes the earlier prohibition on starting that pilot. Ask before the full k=2 naming run. All derived inputs, checkpoints and reports remain local; nothing staged or committed.
+
 The full plan is in `~/dials/In8IrSe9_Xtal4_FullRun/ssg_finder_plan/PLAN.md`. This file fixes the formats that more than one part reads or writes. If you need to change one, update this file.
 
 **Licence rule (decision D1):** anything derived from BYU ISO(3+d)D goes under `local/` (gitignored), never anywhere else in this public repo. That covers operators, cached pages, JSON and fixtures that contain BYU groups.
+
+
+### Type-family naming and specialisation (2026-11-16)
+
+Plain/star eligibility and every descriptor-ranking rule apply to the **type's**
+affine q-family, obtained exactly from `Q R - E Q = M` for the supplied
+operations. They do not apply to the narrower actual modulation family of a
+subgroup. The emitted `qActual` is the exact coordinate-map image of that actual
+family and must be an affine specialisation of the named type family. A proper
+specialisation is valid; equality of actual/type parameter spans is not required.
+The full superspace lattice and every affine operation still map exactly and
+onto, and the symbolic actual-q transformation is checked coefficient by
+coefficient. Type-to-type equivalence witnesses retain their stronger onto-family
+checks. No parameter-count or spelling match substitutes for these checks.
+
+The preferred writer retains all reduced-basis, reciprocal-offset, phase and
+q-block ranking rules above. If it has no admissible name, use the frozen
+`d244096` writer's exact class name as an explicit compatibility fallback and
+count `namingFallback: "d244096"` separately. This exception does not relax exact
+map or actual-family membership checks. Do not return unidentified where that
+writer supplies an exact name. The frozen algorithm has only bounded exact-input
+memoisation added; no catalogue records or keyed naming tables are copied.
+
+Validation must enumerate subgroup **classes**, not just parents: every d1/d2
+parent, the original stratified d3 sample augmented with all cubic d3 parents.
+Keep the exact coverage counts and other derived validation statistics local.
+Compare named counts with `d244096`; report compatibility
+fallbacks, exact-map failures, unidentified classes and stops. The frozen
+2,000-class d2 k=2 pilot follows a complete no-stop gate. Full k2 naming still
+requires explicit user approval. All derived inputs/results remain under local/.
 
 ## 1. Rationals and operators
 

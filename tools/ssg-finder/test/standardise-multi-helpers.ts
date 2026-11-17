@@ -63,14 +63,15 @@ export function checkMap(ops:SOp[],q:string[],r:Standardised):boolean {
  if(ops.length*targetC.length!==target.length*sourceC.length)return false;
  const form=[...r.symbol.q.matchAll(/\(([^()]*)\)/g)].map(m=>m[1]);
  if(ssgSymbolInAxes(target,form,crystalSystemOf(r.sgNumber))?.full!==r.symbol.full)return false;
- // Equality of symbolic affine spans, including constants (parameter names may change).
+ // Exact affine containment in the type family, including constants. A subgroup
+ // may occupy a proper specialisation; its mapped actual family is checked above.
  const sourceNames=paramsOf(r.qActual),targetNames=paramsOf(form);
  const parse=(rows:string[],names:string[])=>rows.flatMap(row=>row.split(',').map(x=>parseLinear(x,names)));
  const a=parse(r.qActual,sourceNames),b=parse(form,targetNames);
  const rank=(rows:Q[][])=>{if(!rows.length)return 0;let c=0;for(let j=0;j<rows[0].length&&c<rows.length;j++){let k=rows.findIndex((row,i)=>i>=c&&!row[j].isZero());if(k<0)continue;[rows[c],rows[k]]=[rows[k],rows[c]];const v=rows[c][j];rows[c]=rows[c].map(x=>x.div(v));for(let i=0;i<rows.length;i++)if(i!==c){const f=rows[i][j];rows[i]=rows[i].map((x,h)=>x.sub(f.mul(rows[c][h])));}c++;}return c;};
  const A=sourceNames.map((_,k)=>a.map(x=>x.coef[k])),B=targetNames.map((_,k)=>b.map(x=>x.coef[k]));
- const rA=rank(A.map(row=>[...row])),rB=rank(B.map(row=>[...row]));
- return rA===rB&&rank([...A,...B,a.map((x,i)=>x.c.sub(b[i].c))].map(row=>[...row]))===rA;
+ const rB=rank(B.map(row=>[...row]));
+ return rank([...B,...A,a.map((x,i)=>x.c.sub(b[i].c))].map(row=>[...row]))===rB;
 }
 
 const DATA=join(new URL(".", import.meta.url).pathname,"..","local","data");

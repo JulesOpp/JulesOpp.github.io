@@ -105,7 +105,7 @@ function onPaste(): void {
       elLabel.value = rec.label;
       syncLabel();
     }
-    const dNote = rec.d === 1 ? "" : ` d = ${rec.d}: type names use this tool’s own canonical setting.${rec.d === 3 ? " Cubic groups can take several minutes." : ""}`;
+    const dNote = rec.d === 1 ? "" : ` d = ${rec.d}: type names use this tool’s own canonical setting.${rec.d === 3 ? " Cubic groups can take a minute or more." : ""}`;
     elPasteStatus.innerHTML = `Read ${rec.label ? esc(rec.label) + " " : ""}<span class="mono">${esc(rec.sym)}</span>, ${rec.nops ?? "?"} operators.${esc(dNote)}`;
     elPasteStatus.className = "ssgf-msg";
     elRun.disabled = !supported(rec);
@@ -261,6 +261,8 @@ function typeCell(r: SubRow): string {
   let h = sym(r.type.symbol.full);
   if (r.type.alternates.length)
     h += `<div class="alt">≡ ${r.type.alternates.map(sym).join(" ≡ ")}</div>`;
+  if (r.type.E.length >= 2)
+    h += `<div class="alt">symbol given in our setting; BYU may list the same group in an axis- or q-permuted setting.</div>`;
   return h;
 }
 

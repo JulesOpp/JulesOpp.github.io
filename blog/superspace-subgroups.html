@@ -126,10 +126,16 @@
     It is a companion to the <a href="superspace-group-finder.html">Superspace
     Group Finder</a>: any row can be sent there to find the 3D space groups of
     its commensurate sections.</p>
-    <p><b>Scope:</b> d = 1 with k ≤ 3; d = 2 with k ≤ 2
-    (<span id="ssgs-d2-validation">oracle-validated on all 3,338 parents</span>); d = 3 with k = 1.
-    Lattices can be 3D supercells, internal or mixed. The full d = 2, k = 2
-    oracle validation passed; type naming uses a bounded setting search.</p>
+    <p><b>Scope:</b> (3+1)D groups with k-index up to 3, (3+2)D groups with
+    k-index up to 2, and (3+3)D groups with k-index 1 (translationengleiche
+    subgroups only). For k &gt; 1 the subgroup's superspace lattice Σ′ is one
+    of three kinds: a <i>3D supercell</i>, which enlarges the 3D cell and keeps
+    the internal part of the lattice; an <i>internal</i> lattice, which keeps the
+    3D lattice and changes the modulation (q → q/k and similar); or a
+    <i>mixed</i> lattice, which changes both. Every supported combination was
+    checked class by class against an independent Python reference. For d = 2,
+    k = 2 that check covered all 3,338 parents and 768,066 classes, and each
+    class was identified with exactly one superspace-group type.</p>
     <p><b>How to use.</b> The superspace-group tables belong to the ISO(3+d)D
     project at BYU and are not distributed with this page. As on the finder,
     open the group's BYU page, select everything (Cmd-A or Ctrl-A), copy it and
@@ -142,17 +148,17 @@
         <legend>1 · Group</legend>
         <div class="row">
           <label for="ssgs-label">Superspace group label</label>
-          <input id="ssgs-label" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. 165.1.24.1" aria-describedby="ssgs-byu-note" style="width: 11rem">
+          <input id="ssgs-label" type="text" autocomplete="off" spellcheck="false" placeholder="ISO(3+d)D label" aria-describedby="ssgs-byu-note" style="width: 11rem">
           <form id="ssgs-byu" method="post" action="https://iso.byu.edu/ssginfoform.php" target="_blank" hidden>
             <input type="hidden" name="label" id="ssgs-byu-label" value="">
             <input type="hidden" name="notation" value="xyzt">
             <input type="hidden" name="supercenter" value="true">
             <button type="submit">Open BYU page ↗</button>
           </form>
-          <span class="note" id="ssgs-byu-note">Labels look like 165.1.24.1 (ISO(3+d)D numbering).</span>
+          <span class="note" id="ssgs-byu-note">Enter the group’s ISO(3+d)D label.</span>
         </div>
         <label for="ssgs-paste">Paste the whole BYU group page here</label>
-        <textarea id="ssgs-paste" spellcheck="false" autocomplete="off" aria-describedby="ssgs-paste-status" placeholder="Superspace group: 165.1.24.1 P-3c1(0,0,g)000 …"></textarea>
+        <textarea id="ssgs-paste" spellcheck="false" autocomplete="off" aria-describedby="ssgs-paste-status" placeholder="Paste the complete ISO(3+d)D group page here…"></textarea>
         <p class="ssgf-msg" id="ssgs-paste-status" aria-live="polite"></p>
       </fieldset>
 
@@ -201,7 +207,7 @@
         </fieldset>
       </form>
 
-      <p class="note">For d = 2, 3 the type symbol is written in this tool’s own canonical setting; it agrees with the BYU ISO(3+d)D symbol for about 40% of groups.</p>
+      <p class="note">For d ≥ 2: symbol given in our setting; BYU may list the same group in an axis- or q-permuted setting.</p>
       <div id="ssgs-results" aria-live="polite"></div>
       <noscript><p>This tool needs JavaScript and WebAssembly.</p></noscript>
     </section>
@@ -217,7 +223,9 @@
       <li><b>Superspace group (type)</b> is the type of H in this tool’s canonical setting: the q family of the Bravais class in letters (a, b, g) and one phase
       letter per symmetry direction (0, s = 1/2, t = 1/3, q = 1/4, h = 1/6).
       Where several orthorhombic settings are tied, the other names are given
-      after ≡; they are the same type.</li>
+      after ≡; they are the same type. For d ≥ 2 a note under the symbol
+      reminds you that ISO(3+d)D may list the same type with its axes or
+      q vectors permuted.</li>
       <li><b>q</b> lists the subgroup's own modulation vectors in that setting,
       members of the type's q family (for example (0,0,g) in a P-1(a,b,g) type).</li>
       <li><b>Conjugates</b> is the number of subgroups in the conjugacy class;
@@ -253,18 +261,29 @@
     WebAssembly), then a search over settings of that space group for the one
     that brings the modulation vectors into a canonical q family. For d = 1,
     this uses the Bravais-class q forms of International Tables C
-    (Table 9.8.3) and the ISO(3+d)D axis and lattice conventions.
-    Among the equivalent names that remain, a fixed choice rule picks one.
-    The type names are worked out by this algorithm, not looked up; the rule
-    uses the tool’s own canonical setting for d = 2, 3. If a subgroup cannot be identified, its row says <i>unidentified</i> and a
-    warning explains why. These rows remain visible under every filter. The Python
-    oracle is validated locally against ISO(3+d)D; no catalogue data are shipped.</p>
+    (Table 9.8.3) and the ISO(3+d)D axis and lattice conventions.</p>
+    <p>The type names are worked out by this algorithm, not looked up, and the
+    same group always gets the same name. Among the valid ways to write it, the
+    writer prefers the fewest occurrences of the free parameters (a, b, g),
+    then the fewest nonzero rational offsets, then the fewest nontrivial phase
+    letters. Rational offsets are reduced modulo the centred reciprocal lattice
+    of the basic space group. With several q vectors, the blocks are ordered
+    free first, then rational, then 0. The names are written in the style of
+    ISO(3+d)D. They were compared with the ISO(3+d)D tables privately, and
+    nothing derived from those tables is shipped with this page. For d ≥ 2 the
+    name may differ from the ISO(3+d)D spelling by a permutation of the axes or
+    of the q basis; it is still the same type. If a subgroup cannot be
+    identified, its row says <i>unidentified</i> and a warning explains why.
+    These rows remain visible under every filter.</p>
 
     <h2>Limitations</h2>
     <ul>
       <li>The caps are k ≤ 3 for d = 1, k ≤ 2 for d = 2,
       and k = 1 for d = 3. Internal-basis and setting searches are bounded;
-      an unidentified class is retained and is not evidence of inequivalence. Cubic d = 3 parents can take several minutes; progress appears as classes are named, and Cancel stops the worker.</li>
+      an unidentified class is retained and is not evidence of inequivalence.</li>
+      <li>Cubic (3+3)D parents can be demanding. Recent Node timing checks
+      took about half a minute to a minute; browser runs can take longer.
+      Rows appear as classes are named, and Cancel stops the calculation.</li>
       <li>Magnetic superspace groups are not handled.</li>
       <li>The symbol in the parent's axes is only given when the subgroup keeps
       the parent's crystal system.</li>

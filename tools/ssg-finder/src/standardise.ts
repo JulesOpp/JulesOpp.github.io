@@ -45,6 +45,7 @@
 // The letter-position comparison order is empirical, fixed by the 775-record d = 1
 // sweep. It is a naming convention fitted to those data, not a derived universal order.
 
+import { standardise as legacyStandardise } from "./standardise-legacy";
 import { gcd, toSafeInt, matInv, Q, type QMat, type QVec } from "./rational";
 import { identify, numToQ, type Op3 } from "./identify";
 import { paramsOf, parseLinear, type SOp } from "./ssg";
@@ -54,6 +55,8 @@ import { hnf, snf, imatDet, type IMat } from "./intmat";
 
 export interface Standardised {
   ok: true;
+  /** Exact compatibility result from the frozen pre-Phase-D writer. */
+  namingFallback?: "d244096";
   sgNumber: number;
   symbol: SsgSymbol; // type symbol, q written as the family (a, b, g letters)
   qActual: string[]; // the group's own q in that setting, e.g. "0,0,g" or "-g,g,0"
@@ -200,22 +203,32 @@ export function transformOps(ops: SOp[], P: QMat, p: QVec, E: number[][], M: QMa
     for(const c of cen.values()) {const op={W,w:vadd(w0,c).map(x=>x.mod1())};out.set(opKey(op),op);}
   }
   const all=[...out.values()],id=all.find(o=>isIdW(o.W)&&o.w.every(x=>x.isZero()))!;
-  return [id,...all.filter(o=>o!==id).sort((a,b)=>opKey(a)<opKey(b)?-1:opKey(a)>opKey(b)?1:0)];
+  return [id,...[...out.entries()].filter(([,o])=>o!==id).sort(([a],[b])=>a<b?-1:a>b?1:0).map(([,o])=>o)];
 }
 
 /** Factor a second, integral internal change after a physical conjugation.
  * y=P x+p, s=U t; s'=B s+mp y-mp p, so the composed internal
  * origin is exactly zero. This is an automorphism of Z^(3+d): no new lattice
  * closure is needed. Integer matrix products use BigInt throughout. */
-function internalTransformer(ops:SOp[],p:QVec):(B:number[][],mp:QMat)=>SOp[] {
+function internalTransformer(ops:SOp[],p:QVec,resultCache?:Map<string,Map<string,SOp[]>>):(B:number[][],mp:QMat)=>SOp[] {
+  // Cache only exact operation sets and the full internal affine change.
+  // Eight groups with 256 entries each bound memory within one naming call.
+  const baseKey=resultCache?ops.map(opKey).join(' '):'';
+  const results=resultCache?.get(baseKey)??new Map<string,SOp[]>();
+  if(resultCache&&!resultCache.has(baseKey)){
+    if(resultCache.size>=8)resultCache.delete(resultCache.keys().next().value!);
+    resultCache.set(baseKey,results);
+  }
   const d=ops[0].W.length-3;
   const mul=(A:IMat,B:IMat):IMat=>A.map(row=>B[0].map((_,j)=>row.reduce((s,x,k)=>s+x*B[k][j],0n)));
   const data=ops.map(o=>({o,R:o.W.slice(0,3).map(r=>r.slice(0,3).map(BigInt)),F:o.W.slice(3).map(r=>r.slice(0,3).map(BigInt)),D:o.W.slice(3).map(r=>r.slice(3).map(BigInt))}));
   const inverses=new Map<string,IMat>();
   return (basis,mp)=>{
-    const B=basis.map(r=>r.map(BigInt)),key=mkey(basis);
+    const shift=mv(mp,p).map(x=>x.neg()),key=mkey(basis),resultKey=key+'|'+mkey(mp)+'|'+vkey(shift);
+    const hit=results.get(resultKey);if(hit)return hit;
+    const B=basis.map(r=>r.map(BigInt));
     let Bi=inverses.get(key);if(!Bi){Bi=matInv(qmat(basis)).map(r=>r.map(x=>BigInt(toSafeInt(x,'inverse internal basis'))));inverses.set(key,Bi);}
-    const m=mp.map(r=>r.map(x=>BigInt(toSafeInt(x,'internal residue')))),shift=mv(mp,p).map(x=>x.neg());
+    const m=mp.map(r=>r.map(x=>BigInt(toSafeInt(x,'internal residue'))));
     const out=data.map(({o,R,F,D})=>{
       const Dn=mul(mul(B,D),Bi!),BF=mul(B,F),mR=mul(m,R),Dm=mul(Dn,m);
       const Fn=BF.map((r,i)=>r.map((x,j)=>x+mR[i][j]-Dm[i][j]));
@@ -224,7 +237,9 @@ function internalTransformer(ops:SOp[],p:QVec):(B:number[][],mp:QMat)=>SOp[] {
       return {W,w:[...o.w.slice(0,3),...wI.map(x=>x.mod1())]};
     });
     const id=out.find(o=>isIdW(o.W)&&o.w.every(x=>x.isZero()))!;
-    return [id,...out.filter(o=>o!==id).sort((a,b)=>opKey(a)<opKey(b)?-1:opKey(a)>opKey(b)?1:0)];
+    const sorted=[id,...out.filter(o=>o!==id).map(o=>({o,key:opKey(o)})).sort((a,b)=>a.key<b.key?-1:a.key>b.key?1:0).map(x=>x.o)];
+    if(results.size>=256)results.clear();results.set(resultKey,sorted);
+    return sorted;
   };
 }
 
@@ -579,7 +594,7 @@ function rank(list: Candidate[], system: CrystalSystem): Candidate[] {
  * list incl. centrings) and q text in the same axes. Requires loadMoyo().
  */
 export function standardise(ops: SOp[], Qtext: string[]): Standardised | Fail {
-  if (Qtext.length !== 1) return standardiseMulti(ops, Qtext);
+  if (Qtext.length !== 1) return standardiseTypeFamily(ops, Qtext);
   const c = candidates(ops, Qtext);
   if ("ok" in c) return c;
   if (!c.list.length) return { ok: false, reason: "no standard setting with a (3+1)D Bravais-class q form" };
@@ -622,48 +637,215 @@ function monoclinicAnchor(qs:Lin[][],names:string[],Ti:QMat):number[][] {
 
 // Pass-3 higher-dimensional naming rule; BYU agreement is measured, not required.
 /** Solve e H = target exactly in the full-rank row lattice. */
-function latticeCoordinates(H:QMat,target:QVec):number[]|null {
+function coordinateSolver(H:QMat):(target:QVec)=>QVec|null {
+  if(!H.length)return target=>target.every(x=>x.isZero())?[]:null;
   const d=H.length, pivots:number[]=[],A=H.map(r=>[...r]);let rank=0;
-  for(let j=0;j<target.length&&rank<d;j++) {
+  for(let j=0;j<H[0].length&&rank<d;j++) {
     const k=A.findIndex((r,i)=>i>=rank&&!r[j].isZero());if(k<0)continue;
     [A[rank],A[k]]=[A[k],A[rank]];const v=A[rank][j];A[rank]=A[rank].map(x=>x.div(v));
     for(let i=rank+1;i<d;i++){const f=A[i][j];A[i]=A[i].map((x,h)=>x.sub(f.mul(A[rank][h])));}pivots.push(j);rank++;
   }
-  if(rank!==d)return null;
+  if(rank!==d)return ()=>null;
   const inv=matInv(H.map(r=>pivots.map(j=>r[j])));
-  const e=H.map((_,j)=>pivots.reduce((v,k,i)=>v.add(target[k].mul(inv[i][j])),Z));
-  if(e.some(x=>!x.isInt())||target.some((x,j)=>!x.eq(H.reduce((v,r,i)=>v.add(r[j].mul(e[i])),Z))))return null;
-  return e.map(x=>toSafeInt(x,'internal lattice coordinate'));
+  return target=>{
+    const e=H.map((_,j)=>pivots.reduce((v,k,i)=>v.add(target[k].mul(inv[i][j])),Z));
+    if(target.some((x,j)=>!x.eq(H.reduce((v,r,i)=>v.add(r[j].mul(e[i])),Z))))return null;
+    return e;
+  };
 }
 
-/** Complete shared-family seed/orbit solutions, without an entry bound on E.
- * Each conventional seed coordinate is zero or one named parameter. Solve its
+/** Plain seed/orbit and independent-row solutions, without an entry bound on E.
+ * Each seed coordinate is zero or one named parameter, with partial supports. Solve its
  * coordinates in the HNF lattice, then solve all point-group images in that same
  * lattice and retain every unimodular ordered tuple. */
 function orbitBases(H:QMat,names:string[],rotations:number[][][]):number[][][] {
   const d=H.length,out=new Map<string,number[][]>();
+  // H is fixed throughout this search: factor it once, then verify every
+  // target in all columns. No tolerance or approximate lattice solve.
+  const coordinates=coordinateSolver(H);
+  const solve=(target:QVec)=>{
+    const e=coordinates(target);
+    return !e||e.some(x=>!x.isInt())?null:e.map(x=>toSafeInt(x,'internal lattice coordinate'));
+  };
   const targets:QVec[]=[];
   for(let a=-1;a<names.length;a++)for(let b=-1;b<names.length;b++)for(let c=-1;c<names.length;c++) {
-    const axes=[a,b,c];if(names.some((_,k)=>!axes.includes(k)))continue;
+    const axes=[a,b,c];if(axes.every(k=>k<0))continue;
     targets.push(names.flatMap((_,k)=>axes.map(v=>v===k?ONE:Z)));
   }
+  const independent=new Map<string,number[]>();
   for(const seed of targets) {
-    const first=latticeCoordinates(H,seed);if(!first)continue;
+    const first=solve(seed);if(!first)continue;
+    independent.set(first.join(','),first);
     const rows=new Map<string,number[]>();rows.set(first.join(','),first);
     for(const R of rotations) {
       const target=names.flatMap((_,k)=>[0,1,2].map(j=>[0,1,2].reduce((v,h)=>v.add(seed[k*3+h].mulInt(R[h][j])),Z)));
-      const row=latticeCoordinates(H,target);if(row)rows.set(row.join(','),row);
+      const row=solve(target);if(row)rows.set(row.join(','),row);
     }
     const visit=(A:number[][])=>{if(A.length===d){if([1n,-1n].includes(imatDet(A.map(r=>r.map(BigInt)))))out.set(mkey(A),A);return;}for(const row of rows.values())visit([...A,row]);};
     visit([first]);
   }
+  // Independent vectors may omit parameters belonging to an earlier star.
+  // Solve in the exact HNF lattice; entries of the resulting GL map are unbounded.
+  const visit=(A:number[][])=>{
+    if(A.length===d){if([1n,-1n].includes(imatDet(A.map(r=>r.map(BigInt)))))out.set(mkey(A),A);return;}
+    for(const row of independent.values())visit([...A,row]);
+  };
+  visit([]);
   return [...out.values()];
 }
 
-const multiCost=(form:string[],bIndex:number)=> {
-  const constants=form.reduce((v,row,i)=>v+row.split(',').reduce((w,t,j)=>w+(/^[-0-9]/.test(t)&&t!=='0'?(j+1)*10**(3-i):0),0),0);
-  const negative=form.reduce((v,row)=>v+row.split(',').filter(t=>/^-[0-9]/.test(t)).length,0);
-  return negative*1e9+bIndex*1e6+constants;
+const reciprocalOffsetCache=new Map<string,QVec>();
+/** Canonical representative modulo the reciprocal lattice of Z^3 + centrings.
+ * Order: L1 absolute size, componentwise absolute sizes, [0,1) membership,
+ * then nonnegative signs and numeric order. The axis periods below belong to
+ * the reciprocal lattice, so the finite nearest-coordinate box is exhaustive. */
+export function reciprocalOffsetRepresentative(offset:QVec,cents:QVec[]):QVec {
+  const periods=[0,1,2].map(j=>qi(cents.reduce((v,c)=>lcmB(v,c[j].d),1n)));
+  const residue=offset.map((x,j)=>x.modQ(periods[j]));
+  const key=cents.map(c=>vkey(c.map(x=>x.mod1()))).sort().join(';')+'|'+vkey(residue);
+  const cached=reciprocalOffsetCache.get(key);if(cached)return [...cached];
+  const abs=(x:Q)=>x.sign()<0?x.neg():x;
+  const compare=(a:QVec,b:QVec)=>{
+    const aa=a.map(abs),bb=b.map(abs);
+    const size=aa.reduce((v,x)=>v.add(x),Z).cmp(bb.reduce((v,x)=>v.add(x),Z));if(size)return size;
+    for(let j=0;j<3;j++){const c=aa[j].cmp(bb[j]);if(c)return c;}
+    const outside=(v:QVec)=>v.filter(x=>x.sign()<0||x.cmp(ONE)>=0).length;
+    const range=outside(a)-outside(b);if(range)return range;
+    const signs=a.filter(x=>x.sign()<0).length-b.filter(x=>x.sign()<0).length;if(signs)return signs;
+    for(let j=0;j<3;j++){const c=b[j].cmp(a[j]);if(c)return c;}return 0;
+  };
+  let candidates:QVec[]=[[]];
+  for(let j=0;j<3;j++){
+    const m=periods[j],fraction=residue[j].mod1();
+    const choices=Array.from({length:toSafeInt(m,'reciprocal axis period')},(_,k)=>{
+      const x=fraction.add(qi(k));return x.mulInt(2).cmp(m)>0?x.sub(m):x;
+    });
+    candidates=candidates.flatMap(row=>choices.map(x=>[...row,x]));
+  }
+  const allowed=candidates.filter(row=>{
+    const delta=row.map((x,j)=>x.sub(residue[j]));
+    return delta.every(x=>x.isInt())&&cents.every(c=>c.reduce((v,x,j)=>v.add(x.mul(delta[j])),Z).isInt());
+  });
+  allowed.sort(compare);const best=allowed[0];
+  if(!best)throw new Error('no reciprocal offset representative');
+  if(reciprocalOffsetCache.size>=4096)reciprocalOffsetCache.clear();reciprocalOffsetCache.set(key,best);
+  return [...best];
+}
+
+/** One shared row-parameter set uses a,b,g. Distinct sets are numbered by
+ * first appearance, so a star followed by an independent row uses sets 1,2.
+ * A parameter shared across different row sets retains its first owner's name. */
+function parameterSetNames(sets:number[][],labels:string[],owners:number[]):string[] {
+  const groups=new Map<string,number>();
+  const blockGroup=sets.map(set=>{const key=set.join(',');if(!groups.has(key))groups.set(key,groups.size+1);return groups.get(key)!;});
+  return labels.map((label,k)=>label[0]+(groups.size===1?'':String(blockGroup[owners[k]])));
+}
+
+/** Rename independent component forms, preserving every exact shared relation.
+ * An invertible parameter change is separate from the unimodular internal basis.
+ * Opposite components share a name; dependent sums require another q basis. */
+export function simpleParameterForm(q:Lin[][],names:string[]):string[]|null {
+  const vectors:QVec[]=[], labels:string[]=[], reduced:QVec[]=[];
+  for(const [i,row] of q.entries())for(const [j,x] of row.entries()) {
+    if(x.coef.every(v=>v.isZero()))continue;
+    if(vectors.some(v=>v.every((a,k)=>a.eq(x.coef[k]))||v.every((a,k)=>a.eq(x.coef[k].neg()))))continue;
+    const v=[...x.coef];
+    let r=[...v];
+    for(const old of reduced){const at=old.findIndex(a=>!a.isZero());const f=r[at];r=r.map((a,k)=>a.sub(f.mul(old[k])));}
+    const at=r.findIndex(a=>!a.isZero());if(at<0)return null;
+    const pivot=r[at];reduced.push(r.map(a=>a.div(pivot)));
+    vectors.push(v);labels.push(['a','b','g'][j]+String(i+1));
+  }
+  const sets=q.map(row=>vectors.flatMap((v,k)=>row.some(x=>v.every((a,h)=>a.eq(x.coef[h]))||v.every((a,h)=>a.eq(x.coef[h].neg())))?[k]:[]));
+  const displayNames=parameterSetNames(sets,labels,vectors.map((_,k)=>sets.findIndex(set=>set.includes(k))));
+  return q.map(row=>row.map(x=>{
+    if(x.coef.every(v=>v.isZero()))return x.c.toString();
+    const k=vectors.findIndex(v=>v.every((a,h)=>a.eq(x.coef[h]))||v.every((a,h)=>a.eq(x.coef[h].neg())));
+    const sign=vectors[k].every((a,h)=>a.eq(x.coef[h]))?'':'-';
+    return sign+displayNames[k]+(x.c.isZero()?'':(x.c.sign()>0?'+':'')+x.c.toString());
+  }).join(','));
+}
+
+/** Permit dependent component forms only in later exact star images. The
+ * coefficient comparison is symbolic; the offset lies in the basic reciprocal
+ * lattice precisely when it is integral and annihilates every centring. */
+export function starParameterForm(q:Lin[][],names:string[],rotations:number[][][],cents:QVec[]):string[]|null {
+  const vectors:QVec[]=[],labels:string[]=[],owners:number[]=[];
+  let coordinates=coordinateSolver(vectors);
+  for(const [i,row] of q.entries())for(const [j,x] of row.entries()) {
+    if(coordinates(x.coef)!==null)continue;
+    vectors.push(x.coef);labels.push(['a','b','g'][j]+String(i+1));owners.push(i);
+    coordinates=coordinateSolver(vectors);
+  }
+  const renamed=q.map(row=>row.map(x=>({...x,coef:coordinates(x.coef)!})));
+  for(const [i,row] of renamed.entries()) {
+    // New parameters must have a plain introduction in their first block.
+    for(const [k,owner] of owners.entries())if(owner===i&&!row.some(x=>x.coef.every((v,h)=>v.eq(h===k?ONE:Z))))return null;
+    if(row.every(x=>plainComponent(x)))continue;
+    if(owners.some((owner,k)=>owner===i&&row.some(x=>!x.coef[k].isZero())))return null;
+    const star=q.slice(0,i).some(seed=>rotations.some(R=>{
+      const delta=row.map((_,j)=>q[i][j].c.sub(seed.reduce((v,x,h)=>v.add(x.c.mulInt(R[h][j])),Z)));
+      return delta.every(x=>x.isInt())&&cents.every(c=>c.reduce((v,x,j)=>v.add(x.mul(delta[j])),Z).isInt())&&
+        q[i].every((x,j)=>names.every((_,k)=>x.coef[k].eq(seed.reduce((v,y,h)=>v.add(y.coef[k].mulInt(R[h][j])),Z))));
+    }));
+    if(!star)return null;
+  }
+  const sets=renamed.map(row=>vectors.flatMap((_,k)=>row.some(x=>!x.coef[k].isZero())?[k]:[]));
+  const displayNames=parameterSetNames(sets,labels,owners);
+  return renamed.map(row=>formatQ(row,displayNames));
+}
+const plainComponent=(x:Lin)=>{
+  const nz=x.coef.filter(v=>!v.isZero());return !nz.length||nz.length===1&&(nz[0].eq(ONE)||nz[0].eq(ONE.neg()));
+};
+
+/** q-block comparison ignores parameter spelling: free < nonzero rational < 0,
+ * then larger rational first. Later exact symbol/map keys make the order total. */
+export function compareQBlocks(a:string,b:string):number {
+  const aa=a.split(','),bb=b.split(',');
+  for(let j=0;j<3;j++){
+    const free=(s:string)=>/[a-z]/i.test(s),af=free(aa[j]),bf=free(bb[j]);
+    const av=af?Z:Q.parse(aa[j]),bv=bf?Z:Q.parse(bb[j]);
+    const at=af?0:av.isZero()?2:1,bt=bf?0:bv.isZero()?2:1;
+    if(at!==bt)return at-bt;
+    if(at===1){const c=bv.cmp(av);if(c)return c;}
+  }
+  return 0;
+}
+const compareQForms=(a:string[],b:string[])=>{
+  for(let i=0;i<a.length;i++){const c=compareQBlocks(a[i],b[i]);if(c)return c;}return 0;
+};
+/** Prefer nontrivial phases first among blocks with equal semantic q keys.
+ * Count only out-of-order pairs: all-zero assignments keep zero cost too.
+ * This orders blocks without introducing a preference for new phase content. */
+export function phaseOrderCost(symbol:SsgSymbol):number {
+  const form=(symbol.q.match(/\([^)]*\)/g)??[]).map(row=>row.slice(1,-1));
+  let cost=0;
+  for(let i=0;i<form.length;i++)for(let j=i+1;j<form.length;j++)
+    if(compareQBlocks(form[i],form[j])===0&&!/[^0]/.test(symbol.shifts[i])&&/[^0]/.test(symbol.shifts[j]))cost++;
+  return cost;
+}
+const settingCost=(form:string[],bIndex:number,lowerForD?:number)=> {
+  const components=form.flatMap(row=>row.split(',')).filter(Boolean);
+  const compound=components.filter(t=>/[a-z]/i.test(t)&&!/^[-]?[abg][0-9]*(?:[+-][0-9]+(?:\/[0-9]+)?)?$/.test(t)).length;
+  const outside=components.filter(t=>!/[a-z]/i.test(t)&&Q.parse(t).cmp(ONE)>=0).length;
+  const negative=components.filter(t=>/^-[0-9]/.test(t)).length;
+  // Retain the fitted rational setting preference, minimised over block
+  // permutations so it cannot choose their order. Branches use the smallest
+  // possible positional weight as an admissible lower bound, never a prune
+  // based on the current block's eventual position.
+  const fixed=form.map(row=>row.split(',').reduce((v,t,j)=>v+(/^[-0-9]/.test(t)&&t!=='0'?(j+1):0),0));
+  const constants=lowerForD===undefined?fixed.sort((a,b)=>a-b).reduce((v,x,i)=>v+x*10**(3-i),0):fixed.reduce((v,x)=>v+x,0)*10**(4-lowerForD);
+  return compound*1e12+negative*1e9+outside*1e8+bIndex*1e6+constants;
+};
+
+/** Additive descriptor cost, also an admissible branch bound. Phase content
+ * is known only after exact operation transformation and is ranked later. */
+const nontrivialPhaseCount=(symbol:SsgSymbol)=>symbol.shifts.reduce((n,s)=>n+(s.match(/[stqh]/g)??[]).length,0);
+const multiCost=(form:string[],_bIndex:number,_lowerForD?:number)=> {
+  const components=form.flatMap(row=>row.split(','));
+  const occurrences=components.reduce((n,x)=>n+(x.match(/[abg][0-9]*/g)??[]).length,0);
+  const names=paramsOf(form),offsets=components.filter(x=>!parseLinear(x,names).c.isZero()).length;
+  return occurrences*100+offsets;
 };
 
 /** All candidate BYU-axes forms of the group (exported for tests/debugging). */
@@ -677,6 +859,9 @@ export function candidatesMulti(ops: SOp[], Qtext: string[]): { sgNumber: number
   const names = paramsOf(Qtext).sort();
   const qs: Lin[][] = Qtext.map(row => row.split(",").map(s => parseLinear(s,names)));
   const q = qs[0];
+  const paramCoefficients=names.map((_,k)=>qs.flatMap(row=>row.map(x=>x.coef[k])));
+  const paramDen=paramCoefficients.flat().reduce((v,x)=>lcmB(v,x.d),1n);
+  const parameterRank=hnf(paramCoefficients.map(row=>row.map(x=>x.n*(paramDen/x.d)))).H.length;
   if (q.length !== 3) return { ok: false, reason: `bad q "${Qtext[0]}"` };
 
   const ops3: Op3[] = ops.map((o) => ({ R: o.W.slice(0, 3).map((r) => r.slice(0, 3)), t: o.w.slice(0, 3) }));
@@ -735,31 +920,50 @@ export function candidatesMulti(ops: SOp[], Qtext: string[]): { sgNumber: number
   const settings = system==='cubic' ? [ [[1,0,0],[0,1,0],[0,0,1]] ] : system==='monoclinic' ? [...B_SETTINGS.monoclinic, [[0,0,1],[1,0,0],[0,1,0]]] : B_SETTINGS[system];
   const basisCache=multiPrepared,symbols=new Map<string,SsgSymbol|null>();
   const familyCache=new Map<string,PreparedFamily[]>();
-  let winning:[number,number]|undefined,winningPrefix:string|undefined;
-  const basicPerSetting=new Map<number,string>();
-  // Search score levels lazily. Fallbacks remain eligible whenever the preferred
-  // level contains no valid lattice map. This changes work, never the minimum.
-  for(const preferredOnly of [true,false]) {
+  const transformedCache=new Map<string,Map<string,SOp[]>>();
+  const operatorKeys=new WeakMap<SOp[],string>();
+  let winning:number[]|undefined;
+  const independentZeroBases=new Map<string,number>();
+  // Plain components precede exact star compounds. Conventional descriptors
+  // compete at the same sparsity level; they cannot hide a reduced basis.
+  for(const simpleOnly of [true,false]) {
+  for(const preferredOnly of [false]) {
   // Seed the fallback with the exact lowest eligible descriptor cost of each
   // affine lift until one is valid. Its cost is then a proven upper bound.
   // The full traversal restarts below with that bound and an empty list, so
   // even equal rank keys retain the original affine-lift/tie order.
   for(const minimumOnly of preferredOnly?[false]:[true,false]) {
   if(!minimumOnly)list.length=0;
-  settingSearch: for(const [bIndex,Bn] of settings.entries()) for(const {N,n} of norm) {
-    if(winning&&winning[0]===0&&winning[1]<bIndex*1e6)continue;
+  for(const [bIndex,Bn] of settings.entries()) for(const {N,n} of norm) {
+    // Every independent parameter needs an occurrence. At that absolute lower
+    // bound with no offsets/phases, a worse basic setting cannot improve.
+    if(winning&&winning[0]===parameterRank*100&&winning[1]===0&&winning[2]===0&&winning[3]<bIndex*1e6)continue;
+
     const B=qmat(Bn),BN=matMul(B,qmat(N)),P=matMul(BN,T),p=vadd(mv(BN,t),mv(B,n)),Pi=matInv(P),pk=mkey(P);
     // Cache by the exact HNF q lattice, not the input-relative affine map.
     const coeff=qs.map(row=>names.flatMap((_,k)=>[0,1,2].map(j=>row.reduce((v,x,h)=>v.add(x.coef[k].mul(Pi[h][j])),Z))));
     const D=coeff.flat().reduce((v,x)=>lcmB(v,x.d),1n),H=hnf(coeff.map(row=>row.map(x=>x.n*(D/x.d))));
     if(H.H.length!==d)continue;
+    // GL row changes preserve the rank of each physical-component matrix.
+    // Rank r needs at least r nonzero components, hence at least r parameter
+    // occurrences. This exact bound also rejects sheared dense families before
+    // preparing thousands of descriptors that cannot beat a sparse winner.
+    const occurrenceLower=[0,1,2].reduce((v,j)=>v+hnf(H.H.map(row=>names.map((_,k)=>row[k*3+j]))).H.length,0);
+    if(winning&&occurrenceLower*100>winning[0])continue;
     const U=H.U.map(row=>row.map(x=>toSafeInt(x,'internal basis')));
     const rotations=ops.map(o=>matMul(matMul(P,qmat(o.W.slice(0,3).map(r=>r.slice(0,3)))),Pi).map(r=>r.map(x=>toSafeInt(x,"rotation"))));
     const canonical=H.H.map(row=>row.map(x=>Q.of(x,D)));
     const constants=U.map(row=>[0,1,2].map(j=>qs.reduce((v,r,l)=>v.add(r.reduce((w,x,h)=>w.add(x.c.mul(Pi[h][j]).mulInt(row[l])),Z)),Z)));
     const centred=g.cents.map(c=>mv(B,c));
-    const costLimit=winning&&winning[0]===Number(!preferredOnly)?winning[1]-bIndex*1e6:undefined;
-    const familyKey=[String(preferredOnly),names.join(','),system,mkey(canonical),mkey(constants),[...new Set(rotations.map(mkey))].sort().join(' '),centred.map(vkey).sort().join(' ')].join('|');
+    const active=[0,1,2].filter(j=>canonical.some(row=>names.some((_,k)=>!row[k*3+j].isZero())));
+    // Full component rank means every GL basis has the same independent
+    // displayed components. With zero offsets its formatted q is fixed too.
+    const independent=parameterRank===d*active.length&&constants.flat().every(x=>x.isZero());
+    const zeroKeyForSetting=pk+'|'+vkey(p),zeroLimit=independentZeroBases.get(zeroKeyForSetting);
+    const impossibleConventional=active.length===1&&active[0]!==2||active.length===2&&active.join(',')!=='0,1';
+    if(independent&&impossibleConventional&&winning&&winning[0]===parameterRank*100&&winning[1]===0&&winning[2]===0)continue;
+    const costLimit=winning?.[0];
+    const familyKey=[String(costLimit),String(minimumOnly),String(zeroLimit),String(simpleOnly),String(preferredOnly),names.join(','),system,mkey(canonical),mkey(constants),[...new Set(rotations.map(mkey))].sort().join(' '),centred.map(vkey).sort().join(' ')].join('|');
     const cacheKey=[String(minimumOnly),String(costLimit),familyKey].join('|');
     let prepared=basisCache.get(cacheKey);
     if(!prepared){
@@ -768,41 +972,59 @@ export function candidatesMulti(ops: SOp[], Qtext: string[]): { sgNumber: number
       let families=familyCache.get(familyKey);
       if(!families){
       families=[];
-      const allBases=new Map(bases.map(A=>[mkey(A),A]));
-      for(const A of orbitBases(canonical,names,rotations))allBases.set(mkey(A),A);
+      // A small seed pass establishes valid upper bounds in every basic
+      // setting; the full pass still considers every potentially winning basis.
+      const seeds=minimumOnly?bases.filter(A=>A.every(r=>r.filter(x=>x!==0).length===1)):bases;
+      const allBases=new Map(seeds.map(A=>[mkey(A),A]));
+      if(!minimumOnly)for(const A of orbitBases(canonical,names,rotations))allBases.set(mkey(A),A);
+      // All coefficient entries share D. Accumulate integral numerators once
+      // instead of normalising every multiply/add in each trial basis.
+      const constantDen=constants.flat().reduce((v,x)=>lcmB(v,x.d),1n);
+      const constantNumerators=constants.map(row=>row.map(x=>x.n*(constantDen/x.d)));
       for(const basis of allBases.values()){
-        const q0=basis.map(row=>[0,1,2].map(j=>({
-          coef:names.map((_,k)=>row.reduce((v,x,l)=>(x===0||canonical[l][k*3+j].isZero()?v:v.add(canonical[l][k*3+j].mulInt(x))),Z)),
-          c:row.reduce((v,x,l)=>(x===0||constants[l][j].isZero()?v:v.add(constants[l][j].mulInt(x))),Z)
-        })));
+        if(independent&&zeroLimit!==undefined&&basisCost(basis)>zeroLimit)continue;
+        const q0=basis.map(row=>{
+          const integers=row.map(BigInt);
+          return [0,1,2].map(j=>({
+            coef:names.map((_,k)=>Q.of(integers.reduce((v,x,l)=>v+x*H.H[l][k*3+j],0n),D)),
+            c:Q.of(integers.reduce((v,x,l)=>v+x*constantNumerators[l][j],0n),constantDen)
+          }));
+        });
+        // A nonzero component needs at least one displayed occurrence under
+        // any invertible parameter renaming. Keep equality for every later tie.
+        if(costLimit!==undefined&&q0.reduce((n,row)=>n+row.filter(x=>x.coef.some(v=>!v.isZero())).length,0)*100>costLimit)continue;
+        // Reject ineligible coefficient patterns before preparing offset and
+        // conventional-setting variants; these predicates are independent.
+        const simple=simpleParameterForm(q0,names);
+        if(simpleOnly!==(simple!==null))continue;
+        const parameterForm=simple??starParameterForm(q0,names,rotations,centred);
+        if(!parameterForm)continue;
         // Constants cannot repair a failed coefficient pattern. This is only
         // pruning within the preferred score level; the fallback pass includes it.
         const coefficientQ=q0.map(row=>row.map(x=>({...x,c:Z}))),rotationOps=rotations.map(W=>({W,w:[]}));
         const coefficientForm=conventional(coefficientQ,names,system,rotationOps);
         if(preferredOnly&&!coefficientForm)continue;
-        // Enumerate centred reciprocal congruences on free coordinates too.
-        // A shift of a fixed coordinate can require a compensating free shift.
-        // Keep the legacy representative 1 for integral fixed components.
+        // Reduce the whole offset vector in the centred reciprocal lattice.
+        // The resulting shift is applied to M and the operations as well as
+        // the displayed q: phase letters must be recomputed in that gauge.
+        // Every formerly enumerated shift differs by a reciprocal vector and
+        // therefore has this same representative; none needs a separate branch.
         const choices=q0.map(row=>{
-          let out:QVec[]=[[]];
-          for(const [j,x] of row.entries()){
-            const base=qi(x.c.floor()).neg();
-            const modulus=toSafeInt(centred.reduce((v,c)=>lcmB(v,c[j].d),1n),'centred reciprocal residue');
-            const count=x.coef.some(v=>!v.isZero())?modulus:x.c.isInt()?Math.max(2,modulus):modulus;
-            const ks=Array.from({length:count},(_,k)=>base.add(qi(k)));
-            out=out.flatMap(v=>ks.map(k=>[...v,k]));
-          }
-          return out.filter(mp=>centred.every(c=>c.reduce((v,x,j)=>v.add(x.mul(mp[j])),Z).isInt()));
+          const offsets=row.map(x=>x.c),canonical=reciprocalOffsetRepresentative(offsets,centred);
+          return [canonical.map((x,j)=>x.sub(offsets[j]))];
         });
         // Coefficients are fixed here. All remaining conventional() tests on
         // constants are row-local (including the shared seed's zero constants).
         // Test each row against zero constants elsewhere, preserving that exact
         // predicate and caching its formatting instead of repeating the product.
+        const simpleNames=paramsOf(parameterForm);
+        const simpleQ=parameterForm.map(row=>row.split(',').map(x=>parseLinear(x,simpleNames)));
         const variants=choices.map((row,i)=>row.map(mp=>{
           const shifted=q0[i].map((x,j)=>({...x,c:mp[j].isZero()?x.c:x.c.add(mp[j])}));
           const form=coefficientForm?conventional(coefficientQ.map((r,k)=>k===i?shifted:r),names,system,rotationOps):null;
-          const text=preferredOnly?form?.[i]:formatQ(shifted,names);
-          return {mp,text,preferred:form!==null,cost:text===undefined?0:multiCost([...Array(i).fill(''),text],0)};
+          const display=simpleQ[i].map((x,j)=>({...x,c:shifted[j].c}));
+          const text=formatQ(display,simpleNames);
+          return {mp,text,preferred:form!==null,cost:text===undefined?0:multiCost([text],0,d)};
         }).filter(x=>x.text!==undefined));
         if(variants.some(row=>!row.length))continue;
         const rowMin=variants.map(row=>Math.min(...row.map(x=>x.cost))),remaining=Array(d+1).fill(0);
@@ -810,7 +1032,7 @@ export function candidatesMulti(ops: SOp[], Qtext: string[]): { sgNumber: number
         // A fallback needs at least one row that fails conventional(). Force
         // each possible failing row in turn; other rows attain independent minima.
         // This is its exact eligible minimum, without a Cartesian enumeration.
-        let minimum:number|undefined=preferredOnly?remaining[0]:undefined;
+        let minimum:number|undefined=remaining[0];
         if(!preferredOnly)for(const [i,row] of variants.entries())for(const v of row)if(!v.preferred){
           const cost=remaining[0]-rowMin[i]+v.cost;
           if(minimum===undefined||cost<minimum)minimum=cost;
@@ -825,57 +1047,73 @@ export function candidatesMulti(ops: SOp[], Qtext: string[]): { sgNumber: number
       if(familyCache.size>=4)familyCache.delete(familyCache.keys().next().value!);
       familyCache.set(familyKey,families);
       }
-      const minimumCost=minimumOnly?families.reduce<number|undefined>((v,f)=>v===undefined||f.minimum<v?f.minimum:v,undefined):undefined;
-      const limit=minimumOnly?minimumCost:costLimit;
+      const limit=minimumOnly?undefined:costLimit;
       for(const {basis,q0,variants,remaining,minimum} of families){
         if(limit!==undefined&&minimum>limit)continue;
-        // multiCost is the sum of these nonnegative row costs. An established
-        // valid winner can only improve: a branch above its cost cannot reach
-        // the ranked minimum. Keep equality and the original traversal/tie order;
+        // Row costs are nonnegative admissible lower bounds on multiCost.
+        // An established winner can only improve: a branch above that bound
+        // cannot reach the minimum. Keep equality and the traversal/tie order;
         // include the bound and search mode in the cache key for later searches.
         const visit=(i:number,mp:QMat,text:string[],cost:number,preferred:boolean)=>{
           if(limit!==undefined&&cost+remaining[i]>limit)return;
           if(i===d){
-            if(preferredOnly===preferred)prepared!.push({basis,q0,form:text,conventional:preferred,mp,cost});
+            const exactCost=multiCost(text,0);
+            if(limit===undefined||exactCost<=limit)prepared!.push({basis,q0,form:text,conventional:preferred,mp,cost:exactCost});
             return;
           }
           for(const row of variants[i])visit(i+1,[...mp,row.mp],[...text,row.text!],cost+row.cost,preferred&&row.preferred);
         };
         visit(0,[],[],0,true);
       }
-      // The bIndex contribution is constant across this array, so this exact
-      // score/prefix order is reusable for every affine lift and later record.
-      prepared.sort((a,b)=>a.cost-b.cost||(a.form[0]<b.form[0]?-1:a.form[0]>b.form[0]?1:0));
+      // Descriptor sparsity is independent of phases and physical setting.
+      prepared.sort((a,b)=>a.cost-b.cost||compareQForms(a.form,b.form));
+      if(minimumOnly&&prepared.length)prepared=prepared.filter(x=>x.cost===prepared![0].cost);
       if(basisCache.size>=64)basisCache.delete(basisCache.keys().next().value!);basisCache.set(cacheKey,prepared);
     }
     // Rank descriptors before constructing symbols. A worse score cannot win
     // after an exact valid candidate has established the current best level.
-    const score=(x:Prepared):[number,number]=>[Number(!x.conventional),x.cost+bIndex*1e6];
-    const compare=(a:[number,number],b:[number,number])=>a[0]-b[0]||a[1]-b[1];
+    const score=(x:Prepared,phases=0):number[]=>[x.cost,phases,Number(!x.conventional),settingCost(x.form,bIndex)];
+    const compare=(a:number[],b:number[])=>{for(let i=0;i<a.length;i++)if(a[i]!==b[i])return a[i]-b[i];return 0;};
     let applyInternal:ReturnType<typeof internalTransformer>|null|undefined;
+    const zeroPhaseBases=new Map<string,number>();
     for(const item of prepared) {
-      const level=score(item);if(winning&&compare(level,winning)>0)break;
+      const zeroKey=Number(item.conventional)+'|'+item.form.join(';');
+      const zeroBasis=zeroPhaseBases.get(zeroKey);
+      // Within this affine basic setting and identical displayed form, a valid
+      // zero-phase symbol already has the minimum phase content and full text.
+      // A strictly worse HNF-relative basis cost cannot win a later tie.
+      if(zeroBasis!==undefined&&basisCost(item.basis)>zeroBasis)continue;
+      // Zero nontrivial phases is an admissible lower bound. Once achieved,
+      // inferior settings can be skipped without hiding any phase improvement.
+      if(winning&&item.cost>winning[0])break;
+      if(winning&&compare(score(item),winning)>0)continue;
       const {basis,q0,form,mp,conventional:preferred}=item;
-      // The basic group is identical throughout a normaliser orbit. A complete
-      // first q block is a prefix of full, before any phase letters. Once a valid
-      // smaller prefix exists, larger ones cannot win the symbol tie-break.
-      const basic=basicPerSetting.get(bIndex),prefix=basic===undefined?undefined:basic+'('+form[0]+')';
-      if(winning&&compare(level,winning)===0&&winningPrefix!==undefined&&prefix!==undefined&&prefix>winningPrefix)break;
+      // No raw-text prefix pruning: the semantic block order and complexity
+      // rank must see all equal-score candidates, with their phases attached.
       const E=imul(basis,U),M=mp.map(row=>toM(row,P));
-      if(applyInternal===undefined){const base=transformOps(ops,P,p,U,Array.from({length:d},()=>[Z,Z,Z]),Array(d).fill(Z));applyInternal=base?internalTransformer(base,p):null;}
+      if(applyInternal===undefined){const base=transformOps(ops,P,p,U,Array.from({length:d},()=>[Z,Z,Z]),Array(d).fill(Z));applyInternal=base?internalTransformer(base,p,transformedCache):null;}
       const newOps=applyInternal?applyInternal(basis,mp):transformOps(ops,P,p,E,M,Array(d).fill(Z));
       if(!newOps||newOps.some(o=>isIdW(o.W)&&o.w.slice(3).some(x=>!x.isZero())))continue;
-      const operators=newOps.map(opKey).sort().join(' '),sk=form.join(';')+'|'+operators;
+      let operators=operatorKeys.get(newOps);
+      if(operators===undefined){operators=newOps.map(opKey).sort().join(' ');operatorKeys.set(newOps,operators);}
+      const sk=form.join(';')+'|'+operators;
       if(!symbols.has(sk))symbols.set(sk,ssgSymbolInAxes(newOps,form,system));
       const symbol=symbols.get(sk);
       if(symbol){
-        const prefix=symbol.basic+'('+form[0]+')';basicPerSetting.set(bIndex,symbol.basic);
-        if(winning&&(compare(level,winning)<0||(compare(level,winning)===0&&winningPrefix!==undefined&&prefix<winningPrefix)))list.length=0;
-        winning=level;winningPrefix=prefix;list.push({symbol,bIndex,P,p,E,M,basis,conventional:preferred,operators,qActual:q0.map((row,i)=>formatQ(row.map((x,j)=>({...x,c:x.c.add(mp[i][j])})),names))});
+        const level=score(item,nontrivialPhaseCount(symbol));
+        if(winning&&compare(level,winning)>0)continue;
+        if(level[1]===0){
+          zeroPhaseBases.set(zeroKey,Math.min(zeroBasis??Infinity,basisCost(item.basis)));
+          if(independent&&preferred)independentZeroBases.set(zeroKeyForSetting,Math.min(independentZeroBases.get(zeroKeyForSetting)??Infinity,basisCost(item.basis)));
+        }
+        if(winning&&compare(level,winning)<0)list.length=0;
+        winning=level;list.push({symbol,bIndex,P,p,E,M,basis,conventional:preferred,operators,qActual:q0.map((row,i)=>formatQ(row.map((x,j)=>({...x,c:x.c.add(mp[i][j])})),names))});
       }
     }
-    if(minimumOnly&&list.length)break settingSearch;
+
   }
+  }
+  if(list.length)break;
   }
   if(list.length)break;
   }
@@ -938,15 +1176,105 @@ function conventional(q:Lin[][], names:string[], system:CrystalSystem, ops:SOp[]
 function standardiseMulti(ops:SOp[],q:string[]):Standardised | Fail {
   const c=candidatesMulti(ops,q); if('ok' in c)return c;
   if(!c.list.length)return {ok:false,reason:'no valid transformed superspace lattice'};
-  const cost=(x:MultiCandidate)=>multiCost((x.symbol.q.match(/\([^)]*\)/g)??[]).map(row=>row.slice(1,-1)),x.bIndex);
-  // Total order: BYU-like q form first, then fitted setting cost; symbol in Unicode codepoint order; HNF-relative
+  const form=(x:MultiCandidate)=>(x.symbol.q.match(/\([^)]*\)/g)??[]).map(row=>row.slice(1,-1));
+  const cost=(x:MultiCandidate)=>multiCost(form(x),0);
+  const phases=(x:MultiCandidate)=>nontrivialPhaseCount(x.symbol);
+  // Total order: plain/star eligibility, occurrences, offsets, phase letters,
+  // conventional preference, sign/normalisation and basic-axis setting cost,
+  // semantic q-block order, tied-block phase order, full symbol in Unicode codepoint order; HNF-relative
   // basis complexity and entries; actual q; then exact serialized affine map.
   // Never rank by the input-relative E: identity depends on the supplied setting.
   const cmp=(a:string,b:string)=>a<b?-1:a>b?1:0;
   const basisCost=(E:number[][])=>E.reduce((s,r,i)=>s+r.reduce((v,x,j)=>v+(i!==j&&x!==0?100:0)+(i===j&&x<=0?10:0),0),0);
   const key=(x:MultiCandidate)=>[mkey(x.basis),x.operators,x.qActual.join(';')].join('|');
-  c.list.sort((a,b)=>Number(b.conventional)-Number(a.conventional)||cost(a)-cost(b)||cmp(a.symbol.full,b.symbol.full)||basisCost(a.basis)-basisCost(b.basis)||cmp(key(a),key(b)));
+  const affineKey=(x:MultiCandidate)=>[mkey(x.P),vkey(x.p),mkey(x.E),mkey(x.M)].join('|');
+  c.list.sort((a,b)=>cost(a)-cost(b)||phases(a)-phases(b)||Number(b.conventional)-Number(a.conventional)||settingCost(form(a),a.bIndex)-settingCost(form(b),b.bIndex)||compareQForms(form(a),form(b))||phaseOrderCost(a.symbol)-phaseOrderCost(b.symbol)||cmp(a.symbol.full,b.symbol.full)||basisCost(a.basis)-basisCost(b.basis)||cmp(key(a),key(b))||cmp(affineKey(a),affineKey(b)));
   const best=c.list[0];
   return {ok:true,sgNumber:c.sgNumber,symbol:best.symbol,qActual:best.qActual,
     P:best.P.map(r=>r.map(String)),p:best.p.map(String),E:best.E,M:best.M.map(r=>r.map(String)),p4:q.map(()=>"0"),alternates:[]};
+}
+
+
+const typeFamilyCache=new Map<string,string[]>();
+const typeNameCache=new Map<string,Standardised|Fail>();
+export const _namingStats={fallbacks:0};
+
+/** Full affine solution of Q R - E Q = M. Translation phases do not restrict
+ * Q: the actual modulation is a specialisation of this operation-defined type.
+ * Free parameters are independent, even when the supplied modulation is not. */
+export function typeQFamily(ops:SOp[],d:number):string[] {
+  if(d<2||d>3||!ops.length||ops.some(o=>o.W.length!==3+d))throw new Error('expected d=2 or 3 operations');
+  const matrices=[...new Map(ops.map(o=>[mkey(o.W),o.W])).entries()].sort(([a],[b])=>a<b?-1:a>b?1:0);
+  const key=matrices.map(([k])=>k).join('|'),cached=typeFamilyCache.get(key);if(cached)return [...cached];
+  const size=3*d,rows:QMat=[];
+  for(const [,W] of matrices)for(let i=0;i<d;i++)for(let j=0;j<3;j++){
+    const row=Array.from({length:size},(_,k)=>{
+      const l=Math.floor(k/3),h=k%3;return qi((i===l?W[h][j]:0)-(h===j?W[3+i][3+l]:0));
+    });
+    const rhs=qi(W[3+i][j]);if(row.some(x=>!x.isZero())||!rhs.isZero())rows.push([...row,rhs]);
+  }
+  const pivots:number[]=[];let rank=0;
+  for(let j=0;j<size&&rank<rows.length;j++){
+    const at=rows.findIndex((r,i)=>i>=rank&&!r[j].isZero());if(at<0)continue;
+    [rows[rank],rows[at]]=[rows[at],rows[rank]];const pivot=rows[rank][j];rows[rank]=rows[rank].map(x=>x.div(pivot));
+    for(let i=0;i<rows.length;i++)if(i!==rank&&!rows[i][j].isZero()){
+      const f=rows[i][j];rows[i]=rows[i].map((x,k)=>x.sub(f.mul(rows[rank][k])));
+    }
+    pivots.push(j);rank++;
+  }
+  if(rows.slice(rank).some(r=>!r[size].isZero()))throw new Error('inconsistent operation q-family');
+  const free=Array.from({length:size},(_,i)=>i).filter(i=>!pivots.includes(i)),names=free.map((_,i)=>'p'+(i+1));
+  const forms=Array.from({length:size},(_,i):Lin=>{
+    const pivot=pivots.indexOf(i);return pivot<0?{c:Z,coef:free.map(j=>i===j?ONE:Z)}:
+      {c:rows[pivot][size],coef:free.map(j=>rows[pivot][j].neg())};
+  });
+  const family=Array.from({length:d},(_,i)=>formatQ(forms.slice(i*3,i*3+3),names));
+  if(typeFamilyCache.size>=1024)typeFamilyCache.delete(typeFamilyCache.keys().next().value!);
+  typeFamilyCache.set(key,family);return [...family];
+}
+
+/** Exact affine inclusion, allowing a proper specialisation of the type. */
+export function isQSpecialisation(actual:string[],family:string[]):boolean {
+  if(actual.length!==family.length)return false;
+  const an=paramsOf(actual),fn=paramsOf(family),parse=(q:string[],names:string[])=>q.flatMap(r=>r.split(',').map(x=>parseLinear(x,names)));
+  const a=parse(actual,an),f=parse(family,fn);if(a.length!==f.length)return false;
+  const coordinates=coordinateSolver(fn.map((_,k)=>f.map(x=>x.coef[k])));
+  return an.every((_,k)=>coordinates(a.map(x=>x.coef[k]))!==null)&&coordinates(a.map((x,i)=>x.c.sub(f[i].c)))!==null;
+}
+
+/** Apply precisely the emitted coordinate map, without renaming or enlarging
+ * the subgroup's actual modulation family. */
+export function mapQFamily(q:string[],P:QMat,E:number[][],M:QMat):string[] {
+  const names=paramsOf(q),a=q.map(r=>r.split(',').map(x=>parseLinear(x,names))),Pi=matInv(P);
+  return E.map((row,i)=>formatQ([0,1,2].map(j=>({
+    coef:names.map((_,k)=>row.reduce((s,e,l)=>s.add(a[l].reduce((t,x,h)=>t.add(x.coef[k].mul(Pi[h][j]).mulInt(e)),Z)),Z)),
+    c:row.reduce((s,e,l)=>s.add(a[l].reduce((t,x,h)=>t.add(x.c.mul(Pi[h][j]).mulInt(e)),Z)),Z).add(M[i].reduce((s,x,h)=>s.add(x.mul(Pi[h][j])),Z))
+  })),names));
+}
+
+function standardiseTypeFamily(ops:SOp[],actual:string[]):Standardised|Fail {
+  let family:string[];
+  try{family=typeQFamily(ops,actual.length);}catch(e){return {ok:false,reason:String(e)};}
+  if(!isQSpecialisation(actual,family))return {ok:false,reason:'actual q is not a specialisation of the operation-defined type family'};
+  const finish=(st:Standardised):Standardised|Fail=>{
+    const qActual=mapQFamily(actual,st.P.map(r=>r.map(Q.parse)),st.E,st.M.map(r=>r.map(Q.parse)));
+    const form=[...st.symbol.q.matchAll(/\(([^()]*)\)/g)].map(m=>m[1]);
+    return isQSpecialisation(qActual,form)?{...st,qActual}:{ok:false,reason:'actual q is outside the named type family'};
+  };
+  // The type depends on the operations, not on which exact member was pasted.
+  // Keep operation order in the key and copy all mutable result fields.
+  const nameKey=ops.map(opKey).join(' ');
+  const cached=typeNameCache.get(nameKey);
+  const clone=(st:Standardised):Standardised=>({...st,symbol:{...st.symbol,shifts:[...st.symbol.shifts]},P:st.P.map(r=>[...r]),p:[...st.p],E:st.E.map(r=>[...r]),M:st.M.map(r=>[...r]),p4:[...st.p4],qActual:[...st.qActual],alternates:[...st.alternates]});
+  const attempt=():Standardised|Fail=>{try{return standardiseMulti(ops,family);}catch(e){return {ok:false,reason:String(e)};}};
+  const named=cached?(cached.ok?clone(cached):cached):attempt();
+  if(!cached){if(typeNameCache.size>=512)typeNameCache.delete(typeNameCache.keys().next().value!);typeNameCache.set(nameKey,named.ok?clone(named):named);}
+  if(named.ok){const result=finish(named);if(result.ok)return result;}
+  // Preserve the exact historical class name whenever the preferred writer has
+  // no admissible form. This code snapshot contains rules, never catalogue data.
+  for(const q of [actual,family]){
+    const legacy=legacyStandardise(ops,q);if(!legacy.ok)continue;
+    const result=finish(legacy);if(result.ok){_namingStats.fallbacks++;return {...result,namingFallback:'d244096'};}
+  }
+  return named.ok?{ok:false,reason:'no exact member of an admissible named family'}:named;
 }
