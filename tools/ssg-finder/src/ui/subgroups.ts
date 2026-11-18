@@ -105,7 +105,10 @@ function onPaste(): void {
       elLabel.value = rec.label;
       syncLabel();
     }
-    const dNote = rec.d === 1 ? "" : ` d = ${rec.d}: type names use this tool’s own canonical setting.${rec.d === 3 ? " Cubic groups can take several minutes." : ""}`;
+    // Cubic basic groups are 195–230; show the slow-run warning when the number is unknown.
+    const sgNo = rec.sgNumber ?? Number(rec.label?.split(".")[0]);
+    const cubicNote = rec.d === 3 && !(sgNo >= 1 && sgNo < 195) ? " Cubic groups can take several minutes." : "";
+    const dNote = rec.d === 1 ? "" : ` d = ${rec.d}: type names use this tool’s own canonical setting.${cubicNote}`;
     elPasteStatus.innerHTML = `Read ${rec.label ? esc(rec.label) + " " : ""}<span class="mono">${esc(rec.sym)}</span>, ${rec.nops ?? "?"} operators.${esc(dNote)}`;
     elPasteStatus.className = "ssgf-msg";
     elRun.disabled = !supported(rec);
