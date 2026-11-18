@@ -64,6 +64,11 @@ fallbacks, exact-map failures, unidentified classes and stops. The frozen
 2,000-class d2 k=2 pilot follows a complete no-stop gate. Full k2 naming still
 requires explicit user approval. All derived inputs/results remain under local/.
 
+**Full d2 k=2 naming — 2026-11-18 (user-approved):** all 3,338 parents and
+768,066 classes named by the production writer with exact rebased-class and
+composed class maps; 0 stops, 0 errors, 0 unidentified, 0 legacy fallbacks.
+81,148 s CPU summed over three single-thread workers (8.5 h wall).
+
 ## 1. Rationals and operators
 
 * A rational is a string: `"0"`, `"1/4"`, `"-3/8"`. It is always reduced, with a positive denominator.
