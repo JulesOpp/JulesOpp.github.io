@@ -105,7 +105,7 @@ function onPaste(): void {
       elLabel.value = rec.label;
       syncLabel();
     }
-    const dNote = rec.d === 1 ? "" : ` d = ${rec.d}: type names use this tool’s own canonical setting.${rec.d === 3 ? " Cubic groups can take a minute or more." : ""}`;
+    const dNote = rec.d === 1 ? "" : ` d = ${rec.d}: type names use this tool’s own canonical setting.${rec.d === 3 ? " Cubic groups can take several minutes." : ""}`;
     elPasteStatus.innerHTML = `Read ${rec.label ? esc(rec.label) + " " : ""}<span class="mono">${esc(rec.sym)}</span>, ${rec.nops ?? "?"} operators.${esc(dNote)}`;
     elPasteStatus.className = "ssgf-msg";
     elRun.disabled = !supported(rec);
