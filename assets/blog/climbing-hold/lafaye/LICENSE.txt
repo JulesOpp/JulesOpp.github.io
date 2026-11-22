@@ -1,0 +1,11 @@
+The .stl files in this folder are decimated, re-oriented adaptations of climbing-hold
+models by Jérémy LAFAYE (https://printables.com/@JeremyLAFAYE_2080610), published on Printables under the
+Creative Commons Attribution-ShareAlike 4.0 International licence (https://creativecommons.org/licenses/by-sa/4.0/).
+Changes: mesh simplified to ~14000 triangles, rotated so the mounting face is x = 0,
+and centred. These adaptations are shared under the same licence. Sources:
+  10x5 hold #01: https://printables.com/model/881409-10x5-holds-sample-pack (bh_10x5_01.stl)
+  10x5 hold #18: https://printables.com/model/881409-10x5-holds-sample-pack (bh_10x5_18.stl)
+  Finger pocket macro #1: https://printables.com/model/881406-finger-pocket-hold-pack (fh1_3_dec.stl)
+  Jug #1 (S): https://printables.com/model/881407-jugs-sample-pack (ch1_s.stl)
+  Rock hold T2-01: https://printables.com/model/881408-rock-sample-pack (rockhold_t2_01.stl)
+  Rock hold T1-04: https://printables.com/model/881408-rock-sample-pack (rockhold_t1_04.stl)

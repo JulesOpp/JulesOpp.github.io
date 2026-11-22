@@ -1,0 +1,22 @@
+{
+  "name": "climbing-hold",
+  "private": true,
+  "type": "module",
+  "description": "In-browser climbing hold generator: manifold-3d meshes, STL export, and OCCT (replicad) STEP export for machinable holds",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "manifold-3d": "3.5.5",
+    "replicad": "1.2.1",
+    "replicad-opencascadejs": "1.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.1"
+  }
+}

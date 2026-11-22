@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Climbing Hold Generator · Julius Oppenheim</title>
+  <meta name="description" content="Design climbing holds in the browser: STL for 3D printing, and STEP for CNC milling a machinable aluminium edge">
+  <link rel="stylesheet" href="../assets/style.css">
+  <link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+  <script src="../assets/theme.js"></script>
+<style>
+/* The app breaks out of the text column: 3D view on the left, controls
+   on the right, stacked below 900 px. Same layout as the vial holder. */
+.ch { display: grid; grid-template-columns: minmax(0, 1fr) 23rem; gap: 1.25rem;
+  max-width: 82rem; margin: 0.5rem auto 1.5rem; padding: 0 1rem; align-items: start; }
+.ch-main { display: grid; gap: 0.5rem; min-width: 0; position: sticky; top: 0.5rem; }
+.ch-stage { position: relative; width: 100%; aspect-ratio: 4 / 3; max-height: calc(100vh - 7rem);
+  background: var(--bg-soft); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.ch-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+  touch-action: none; cursor: grab; }
+.ch-stage canvas:active { cursor: grabbing; }
+.ch-msg { position: absolute; inset: 0; display: grid; place-items: center; padding: 2rem;
+  text-align: center; background: var(--bg-soft); color: var(--fg); font-size: 0.95rem; }
+.ch-msg[hidden] { display: none; }
+.ch-bar { display: flex; flex-wrap: wrap; gap: 0.4rem 0.5rem; align-items: center; font-size: 0.85rem; }
+.ch-viewbar label { display: inline-flex; align-items: center; gap: 0.3rem; color: var(--muted); }
+.ch-viewbar input[type="number"] { width: 3.6rem; font: 0.8rem var(--mono); color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 4px; padding: 0.15rem 0.3rem; }
+.ch-viewbar input[type="checkbox"] { accent-color: var(--accent); }
+.ch button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.ch-bar .status { margin-left: auto; color: var(--muted); font-family: var(--mono); font-size: 0.78rem; }
+.ch-hint, .ch-blurb, .ch-credit { margin: 0; color: var(--muted); font-size: 0.82rem; }
+.ch-blurb { color: var(--fg); }
+.ch-credit[hidden] { display: none; }
+.ch button, .ch select { font: inherit; font-size: 0.85rem; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 6px; padding: 0.22rem 0.6rem; }
+.ch button:hover:not(:disabled), .ch select:hover { border-color: var(--accent); }
+.ch button:disabled { opacity: 0.55; }
+.ch button.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.ch-side { display: grid; gap: 0.9rem; min-width: 0; }
+.ch fieldset { border: 0; border-top: 1px solid var(--line); margin: 0; padding: 0.45rem 0 0; min-width: 0; }
+.ch fieldset[hidden] { display: none; }
+.ch legend { font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); padding: 0 0.4rem 0 0; }
+.ch-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 7rem) 4.2rem 1.4rem; gap: 0.4rem;
+  align-items: center; font-size: 0.84rem; line-height: 1.2; margin: 0.3rem 0; }
+.ch-row input[type="range"] { width: 100%; accent-color: var(--accent); }
+.ch-row input[type="number"] { width: 100%; font: 0.8rem var(--mono); color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 4px; padding: 0.15rem 0.3rem; }
+.ch-row .unit { color: var(--muted); font-size: 0.76rem; }
+.ch-row.full { grid-template-columns: minmax(0, 1fr) auto; }
+.ch-row select { width: 100%; }
+.ch-row.full select { grid-column: 1 / 3; }
+.ch-tip { grid-column: 1 / -1; margin: -0.15rem 0 0.1rem; color: var(--muted); font-size: 0.76rem; }
+.ch-out { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 0.75rem; font-size: 0.82rem; }
+.ch-out dt { color: var(--muted); }
+.ch-out dd { margin: 0; font-family: var(--mono); font-size: 0.78rem; }
+.ch-warn, .ch-stepout { margin: 0.3rem 0 0; padding: 0; list-style: none; font-size: 0.8rem; }
+.ch-warn { color: #b45309; }
+.ch-warn li, .ch-stepout li { margin: 0.15rem 0; }
+.ch-warn:empty, .ch-stepout:empty { display: none; }
+.ch-stepnote { margin: 0.2rem 0 0.4rem; font-size: 0.8rem; color: var(--muted); }
+.prose table.spec { border-collapse: collapse; font-size: 0.9rem; margin: 0.5rem 0 1rem; }
+.prose table.spec th, .prose table.spec td { text-align: left; padding: 0.2rem 0.9rem 0.2rem 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+.prose table.spec th { color: var(--muted); font-weight: normal; }
+@media (max-width: 900px) {
+  .ch { grid-template-columns: minmax(0, 1fr); }
+  .ch-main { position: static; }
+}
+@media (max-width: 420px) {
+  .ch-row { grid-template-columns: minmax(0, 1fr) 4rem 1.4rem; }
+  .ch-row input[type="range"] { grid-column: 1 / -1; grid-row: 2; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap">
+    <a class="site-name" href="../index.html">Julius Oppenheim</a>
+    <nav class="site-nav" aria-label="Main">
+      <a href="../index.html">Home</a>
+      <a href="../publications.html">Publications</a>
+      <a href="../software.html">Software</a>
+      <a href="../water-database.html">Water Database</a>
+      <a href="../blog/index.html" aria-current="page">Blog</a>
+      <a href="../cv.html">CV</a>
+      <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light and dark mode" hidden><svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v2.5M12 20v2.5M1.5 12H4M20 12h2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8"/></svg><svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"/></svg></button>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+    <article class="prose">
+    <h1>Climbing Hold Generator</h1>
+    <p class="date"><time datetime="2026-11-21">November 21, 2026</time></p>
+    <p>A web app to model climbing holds for 3D printing or CNC machining. This is a web version of my desktop
+    <a href="https://github.com/JulesOpp/Climbing-Hold-Generator">Climbing Hold Generator</a>, which is not yet
+    released.</p>
+    </article>
+  </div>
+
+  <section class="ch" aria-label="Climbing hold generator">
+    <div class="ch-main">
+      <div class="ch-stage">
+        <canvas id="ch-gl" role="img" aria-label="3D preview of the climbing hold, wall plane gridded. Drag to rotate, scroll or pinch to zoom."></canvas>
+        <div class="ch-msg" id="ch-msg" hidden></div>
+      </div>
+      <div class="ch-bar">
+        <button type="button" class="primary" id="ch-stl">Download STL</button>
+        <button type="button" id="ch-json">Settings (.json)</button>
+        <button type="button" id="ch-view">Reset view</button>
+        <span class="status" id="ch-status" aria-live="polite"></span>
+      </div>
+      <div class="ch-bar ch-viewbar">
+        <label><input type="checkbox" id="ch-wall" checked> show wall</label>
+        <label>wall angle <input type="number" id="ch-angle" min="-30" max="90" step="5" value="0" aria-describedby="ch-angletip">°</label>
+        <button type="button" id="ch-proj" aria-pressed="false">Orthographic</button>
+        <button type="button" id="ch-front">Front</button>
+        <button type="button" id="ch-side">Side</button>
+      </div>
+      <p class="ch-hint">Drag to rotate · scroll or pinch to zoom · double-click to reset. The grid is the wall, in 10 mm squares. <span id="ch-angletip">Wall angle is degrees past vertical: 0 vertical, 30 a steep overhang, 90 a roof, negative a slab.</span></p>
+      <p class="ch-blurb" id="ch-blurb"></p>
+      <p class="ch-credit" id="ch-credit" hidden></p>
+    </div>
+
+    <aside class="ch-side">
+      <form id="ch-form" onsubmit="return false">
+        <fieldset><legend>Hold</legend>
+          <div class="ch-row full"><select id="ch-hold" aria-label="Hold"></select></div>
+          <div class="ch-bar ch-hist">
+            <button type="button" id="ch-undo" disabled title="Undo (Ctrl/⌘ Z)">↶ Undo</button>
+            <button type="button" id="ch-redo" disabled title="Redo (Shift Ctrl/⌘ Z)">↷ Redo</button>
+            <button type="button" id="ch-rand" title="Pick a random hold with random shape settings">Randomize</button>
+          </div>
+          <div class="ch-row full"><label for="ch-screws">screw holes (#8 / M4 flat head)</label><input type="checkbox" id="ch-screws" checked></div>
+        </fieldset>
+        <fieldset id="ch-stepbox" hidden><legend>CNC</legend>
+          <button type="button" class="primary" id="ch-step">Download STEP for machining</button>
+          <p class="ch-stepnote">Builds the exact solid in OpenCascade (a 7 MB download the first time) and shows it in the viewer, fillets included. See <a href="#cnc">ordering it milled</a> below.</p>
+          <ul class="ch-stepout" id="ch-stepout" aria-live="polite"></ul>
+        </fieldset>
+        <fieldset id="ch-shape"><legend>Shape</legend>
+          <div id="ch-params"></div>
+        </fieldset>
+        <fieldset><legend>Surface texture</legend>
+          <div class="ch-row full"><label for="ch-tex">texture</label><select id="ch-tex" style="width:auto"></select></div>
+          <div class="ch-row"><label for="ch-texh">height</label><span></span><input type="number" id="ch-texh" min="0.2" max="2.5" step="0.1" value="0.8"><span class="unit">mm</span></div>
+          <div class="ch-row"><label for="ch-texs">feature size</label><span></span><input type="number" id="ch-texs" min="2" max="20" step="0.5" value="6"><span class="unit">mm</span></div>
+          <div class="ch-row"><label for="ch-texd">density (divots, grit)</label><span></span><input type="number" id="ch-texd" min="0.2" max="3" step="0.1" value="1"><span class="unit"></span></div>
+        </fieldset>
+        <fieldset><legend>Placement &amp; quality</legend>
+          <div class="ch-row"><label for="ch-rot">rotation on the wall</label><span></span><input type="number" id="ch-rot" min="-180" max="180" step="5" value="0"><span class="unit">°</span></div>
+          <div class="ch-row full"><label for="ch-quality">preview smoothness</label>
+            <select id="ch-quality" style="width:auto"><option value="24">draft</option><option value="48" selected>normal</option><option value="64">fine</option></select></div>
+          <p class="ch-tip">The STL download is always rebuilt at full smoothness.</p>
+        </fieldset>
+        <fieldset><legend>Result</legend>
+          <dl class="ch-out" id="ch-out"></dl>
+          <ul class="ch-warn" id="ch-warn"></ul>
+        </fieldset>
+      </form>
+    </aside>
+  </section>
+
+  <div class="wrap">
+    <article class="prose">
+    <h2>Printing</h2>
+    <p><b>Use at your own risk.</b> A 3D printed climbing hold may break. Be careful when designing geometries,
+    as prints can break, especially along layer lines or at thin sections. Mine have had no problems with
+    strength or delamination (using only Polymaker PolyMAX Tough PLA filament), but yours may break under you.
+    Choose the hold with care and think about how torque will be applied by both the screws and body weight. The
+    <i>Result</i> panel is a crude estimate of filament use and printing time, and a crude estimate of how much
+    support the print needs (support marks may be bad for texture).</p>
+    <p>Some texture can be built into the geometry, but additional texturing is required. In BambuStudio, a
+    <i>Fuzzy Skin = Contour</i> modifier adds the necessary surface texture. Polymaker PolyMAX PLA works well,
+    and any tough PLA should be good enough. Texture will improve once the hold has been chalked. The screw
+    holes are sized for a #8 (or M4) flat-head wood screw: a 13 mm counterbore, a 90° countersink and a 5 mm
+    clearance hole. Note that holds may break if screwed too tightly, but they must be securely fixed to the
+    wall.</p>
+
+    <h2 id="cnc">CNC milling</h2>
+    <p>The parts may be machined (subtractive rather than additive manufacturing). Machining needs .STEP files
+    rather than .STL, because CAM software requires the true surfaces rather than meshes. The
+    <i>machinable edge</i> is therefore built twice: as a mesh for the preview, and as an exact solid made in
+    <a href="https://dev.opencascade.org">OpenCascade</a> for the STEP file. That solid is the convex hull of
+    six equal spheres, grown by their radius. The result is made only of planes, cylinders, cones and spheres,
+    with the fillets as tori and blends, and there is not a single faceted surface in the file.</p>
+    <p>I had one milled from 6061 aluminium. I got quotes from <a href="https://www.xometry.com">Xometry</a> and
+    <a href="https://www.pcbway.com">PCBWay</a>, and the totals came out essentially the same. These are the
+    settings I ordered with:</p>
+    <table class="spec">
+      <tr><th>Process</th><td>CNC Machining (no preferred subprocess)</td></tr>
+      <tr><th>Material</th><td>Aluminum 6061-T6</td></tr>
+      <tr><th>Finish</th><td><b>Bead blast</b></td></tr>
+      <tr><th>Threads, tapped holes, inserts</th><td>none</td></tr>
+      <tr><th>Tolerance</th><td>±0.010″ (±0.25 mm)</td></tr>
+      <tr><th>Surface roughness</th><td>125 µin / 3.2 µm Ra</td></tr>
+      <tr><th>Inspection</th><td>Standard</td></tr>
+      <tr><th>Production type</th><td>Prototype</td></tr>
+    </table>
+    <p><b>Bead blasting is important for surface friction</b>, as bare machined aluminium is too slick. Avoid
+    sharp edges, as these can cut you.</p>
+
+    <h3>Design for how it will be milled</h3>
+    <p>The price of a one-off milled part is mostly setup and programming, not cutting time or metal, so a
+    one-off part will be expensive. Before ordering, consider how the part will be machined:</p>
+    <ul>
+      <li><b>Keep flats on the sides</b>, so the part can be held in a vice without needing a fixture.</li>
+      <li><b>Add a plinth.</b> Extruding the mounting face straight back by about 10 mm makes the flats taller
+      and nearly square, which stops the part pivoting in the jaws. It also gives the part a straight base that
+      is easy to machine.</li>
+      <li><b>Keep concave corners large.</b> Every rounded surface on this hold is convex except the crease
+      where the plinth meets the body. The fillet there sets the largest ball cutter that can finish the part.
+      A 6 mm fillet lets the shop use a 12 mm ball, which makes the finishing toolpath about 30% shorter at a
+      cost of a few cubic millimetres of metal. Tell the shop that the form is convex, so it can use a large
+      cutter.</li>
+      <li><b>An incut lip cannot be 3-axis milled.</b> Say in the order notes that it needs 3+2 (indexed) or
+      5-axis machining, so it is not quoted as 3-axis and then re-quoted.</li>
+      <li><b>Order more than one.</b> At quantity 1 the fixed costs all land on a single part. Quantity is the
+      only lever that changes the price a lot.</li>
+      <li><b>Mind the screws.</b> The <i>screw seat</i> slider sets how much metal sits behind each screw head.
+      A deep seat leaves a shallower hole in the climbing surface, but the screw then has to pass through that
+      much aluminium before it reaches the wall, so buy longer screws.</li>
+    </ul>
+    <p>Before you order, print the same shape in PLA and screw it to the wall to check that you like the
+    hold.</p>
+
+    <h2>Credits and licences</h2>
+    <p>The parametric and sculpted holds are my own designs, ported from the desktop app. That app began from
+    <a href="https://makerworld.com/@jeremytill">Jeremy Till</a>'s OpenSCAD hold library, and the project owes
+    him its start. The <i>System edge</i>'s original geometry is credited to both of us; his other holds are not
+    included here. <i>Big incut</i> is from
+    <a href="https://www.thingiverse.com/thing:2398720">Rock Climbing Holds</a> by
+    <a href="https://www.thingiverse.com/wupinstick/designs">Wupinstick</a>, under
+    <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>, re-oriented for the web. The scanned
+    holds are by
+    <a href="https://printables.com/@JeremyLAFAYE_2080610">Jérémy LAFAYE</a> (made with his
+    <a href="https://github.com/JeremSparte/BHToolset">BH Toolset</a>) and are published on Printables under
+    <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>. They have been decimated and
+    re-oriented for the web, and anything exported from them carries the same licence. The meshes use
+    <a href="https://github.com/elalish/manifold">manifold</a> (Apache-2.0). The STEP export uses
+    <a href="https://replicad.xyz">replicad</a> (MIT) and its WebAssembly build of Open CASCADE Technology
+    (LGPL-2.1). The licence texts are in <a href="../assets/blog/climbing-hold/LICENSES.txt">LICENSES.txt</a>,
+    <a href="../assets/blog/climbing-hold/lafaye/LICENSE.txt">lafaye/LICENSE.txt</a> and
+    <a href="../assets/blog/climbing-hold/wupinstick/LICENSE.txt">wupinstick/LICENSE.txt</a>.</p>
+    </article>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <nav aria-label="Profiles">
+        <a href="mailto:juliuso@princeton.edu">Email</a>
+        <span>·</span>
+        <a href="https://scholar.google.com/citations?user=2yNJuKkAAAAJ&amp;hl=en">Google Scholar</a>
+        <span>·</span>
+        <a href="https://orcid.org/0000-0002-5988-0677">ORCID</a>
+        <span>·</span>
+        <a href="https://www.linkedin.com/in/julius-oppenheim-a59779283/">LinkedIn</a>
+        <span>·</span>
+        <a href="https://github.com/JulesOpp">GitHub</a>
+        <span>·</span>
+        <a href="https://bsky.app/profile/jules-oppenheim.bsky.social">Bluesky</a>
+    </nav>
+    <p>© 2026 Julius Oppenheim</p>
+  </div>
+</footer>
+<script type="module" src="../assets/blog/climbing-hold/chg.js"></script>
+</body>
+</html>

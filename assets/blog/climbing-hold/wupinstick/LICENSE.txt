@@ -1,0 +1,5 @@
+The .stl files in this folder are re-oriented copies of models from "Rock Climbing Holds"
+by Wupinstick (https://www.thingiverse.com/thing:2398720), licensed under the Creative Commons Attribution 4.0
+International licence (https://creativecommons.org/licenses/by/4.0/).
+Changes: rotated so the mounting face is x = 0, centred, and re-meshed as one closed solid.
+  Big incut: Big_incut.stl
